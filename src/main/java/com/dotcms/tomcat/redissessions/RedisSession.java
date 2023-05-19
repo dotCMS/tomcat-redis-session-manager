@@ -1,4 +1,4 @@
-package com.orangefunction.tomcat.redissessions;
+package com.dotcms.tomcat.redissessions;
 
 import java.security.Principal;
 import org.apache.catalina.Manager;
@@ -17,7 +17,7 @@ public class RedisSession extends StandardSession {
 
     private final Log log = LogFactory.getLog(RedisSession.class);
 
-    protected static Boolean manualDirtyTrackingSupportEnabled = false;
+    protected static boolean manualDirtyTrackingSupportEnabled = false;
 
     public static void setManualDirtyTrackingSupportEnabled(boolean enabled) {
         manualDirtyTrackingSupportEnabled = enabled;
@@ -29,6 +29,7 @@ public class RedisSession extends StandardSession {
         manualDirtyTrackingAttributeKey = key;
     }
 
+    protected static final String CLUSTER_SESSION = "CLUSTER_SESSION";
 
     protected HashMap<String, Object> changedAttributes;
     protected boolean dirty = false;
@@ -61,6 +62,12 @@ public class RedisSession extends StandardSession {
         Object oldValue = getAttribute(key);
         super.setAttribute(key, value);
 
+        if(super.getAttribute(CLUSTER_SESSION)==null) {
+            return;
+        }
+        
+        
+        
         if ((value != null || oldValue != null) && (value == null && oldValue != null || oldValue == null && value != null
                         || !value.getClass().isInstance(oldValue) || !value.equals(oldValue))) {
             if (this.manager instanceof RedisSessionManager && ((RedisSessionManager) this.manager).getSaveOnChange()) {

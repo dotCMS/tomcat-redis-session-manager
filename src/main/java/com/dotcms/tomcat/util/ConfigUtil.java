@@ -1,4 +1,4 @@
-package com.orangefunction.tomcat.util;
+package com.dotcms.tomcat.util;
 
 /**
  * Utility class that provides useful methods to access configuration properties for this plugin.
@@ -16,6 +16,9 @@ public class ConfigUtil {
     public static final String REDIS_SENTINELS_PROPERTY = "${TOMCAT_REDIS_SESSION_SENTINELS}";
     public static final String REDIS_DATABASE_PROPERTY = "${TOMCAT_REDIS_SESSION_DATABASE}";
     public static final String REDIS_TIMEOUT_PROPERTY = "${TOMCAT_REDIS_SESSION_TIMEOUT}";
+    public static final String REDIS_MAX_CONNECTIONS = "${TOMCAT_REDIS_MAX_CONNECTIONS}";
+    public static final String REDIS_MAX_IDLE_CONNECTIONS = "${TOMCAT_REDIS_MAX_IDLE_CONNECTIONS";
+    public static final String REDIS_MIN_IDLE_CONNECTIONS = "${TOMCAT_REDIS_MAX_IDLE_CONNECTIONS";
     public static final String REDIS_PERSISTENT_POLICIES_PROPERTY = "${TOMCAT_REDIS_SESSION_PERSISTENT_POLICIES}";
 
     /**
