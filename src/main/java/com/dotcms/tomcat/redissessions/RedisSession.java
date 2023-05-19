@@ -62,10 +62,6 @@ public class RedisSession extends StandardSession {
         Object oldValue = getAttribute(key);
         super.setAttribute(key, value);
 
-        if(super.getAttribute(CLUSTER_SESSION)==null) {
-            return;
-        }
-        
         
         
         if ((value != null || oldValue != null) && (value == null && oldValue != null || oldValue == null && value != null
