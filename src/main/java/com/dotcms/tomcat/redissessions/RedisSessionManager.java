@@ -1,6 +1,6 @@
-package com.orangefunction.tomcat.redissessions;
+package com.dotcms.tomcat.redissessions;
 
-import com.orangefunction.tomcat.util.ConfigUtil;
+import com.dotcms.tomcat.util.ConfigUtil;
 import org.apache.catalina.Lifecycle;
 import org.apache.catalina.LifecycleException;
 import org.apache.catalina.LifecycleState;

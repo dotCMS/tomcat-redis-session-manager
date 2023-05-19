@@ -30,8 +30,8 @@ How this Plugin Works
 
 The following XML configuration is added to the Tomcat `context.xml` file (or the context block of the `server.xml` if applicable):
 
-    <Valve className="com.orangefunction.tomcat.redissessions.RedisSessionHandlerValve" />
-    <Manager className="com.orangefunction.tomcat.redissessions.RedisSessionManager"
+    <Valve className="RedisSessionHandlerValve" />
+    <Manager className="RedisSessionManager"
              host="localhost" <!-- optional: defaults to "localhost" -->
              port="6379" <!-- optional: defaults to "6379" -->
              database="0" <!-- optional: defaults to "0" -->
@@ -91,8 +91,8 @@ For your local environment, you just need to go to the Tomcat `context.xml` file
 ```
     <!-- Uncomment this to enable Redis Session Management for Tomcat -->
     <!--
-    <Valve className="com.orangefunction.tomcat.redissessions.RedisSessionHandlerValve" />
-	<Manager className="com.orangefunction.tomcat.redissessions.RedisSessionManager" />
+    <Valve className="RedisSessionHandlerValve" />
+	<Manager className="RedisSessionManager" />
 	-->
 ```
 As stated in the first line, uncomment both the `Valve` and `Manager` tags for the plugin to be activated when dotCMS starts up. This configuration is what actually enables this plugin, so once you comment it back, dotCMS will handle Sessions as usual.

@@ -1,4 +1,4 @@
-package com.orangefunction.tomcat.util;
+package com.dotcms.tomcat.util;
 
 /**
  * Utility class that provides useful methods to access configuration properties for this plugin.

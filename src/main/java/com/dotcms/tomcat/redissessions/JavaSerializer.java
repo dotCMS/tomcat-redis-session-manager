@@ -1,4 +1,4 @@
-package com.orangefunction.tomcat.redissessions;
+package com.dotcms.tomcat.redissessions;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
