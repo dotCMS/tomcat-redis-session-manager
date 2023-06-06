@@ -1,14 +1,14 @@
 package com.dotcms.tomcat.redissessions;
 
-import java.security.Principal;
 import org.apache.catalina.Manager;
 import org.apache.catalina.session.StandardSession;
-import java.util.HashMap;
-import java.io.IOException;
-
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 
+import java.io.IOException;
+import java.io.Serializable;
+import java.security.Principal;
+import java.util.HashMap;
 
 public class RedisSession extends StandardSession {
 
@@ -28,8 +28,6 @@ public class RedisSession extends StandardSession {
     public static void setManualDirtyTrackingAttributeKey(String key) {
         manualDirtyTrackingAttributeKey = key;
     }
-
-    protected static final String CLUSTER_SESSION = "CLUSTER_SESSION";
 
     protected HashMap<String, Object> changedAttributes;
     protected boolean dirty = false;
@@ -53,24 +51,26 @@ public class RedisSession extends StandardSession {
     }
 
     @Override
-    public void setAttribute(String key, Object value) {
+    public void setAttribute(final String key, final Object value) {
         if (manualDirtyTrackingSupportEnabled && manualDirtyTrackingAttributeKey.equals(key)) {
             dirty = true;
             return;
         }
-
-        Object oldValue = getAttribute(key);
-        super.setAttribute(key, value);
-
-        
-        
+        final Object oldValue = getAttribute(key);
+        if (value instanceof Serializable) {
+            super.setAttribute(key, value);
+        } else {
+            log.warn(String.format("Value of key '%s' is null or not serializable. Removing it from Session '%s'",
+                    key, this.id));
+            super.removeAttribute(key);
+        }
         if ((value != null || oldValue != null) && (value == null && oldValue != null || oldValue == null && value != null
                         || !value.getClass().isInstance(oldValue) || !value.equals(oldValue))) {
             if (this.manager instanceof RedisSessionManager && ((RedisSessionManager) this.manager).getSaveOnChange()) {
                 try {
                     ((RedisSessionManager) this.manager).save(this, true);
-                } catch (IOException ex) {
-                    log.error("Error saving session on setAttribute (triggered by saveOnChange=true): " + ex.getMessage());
+                } catch (final IOException ex) {
+                    log.error("Error saving session '" + this.id + "' on setAttribute (triggered by saveOnChange=true): " + ex.getMessage());
                 }
             } else {
                 changedAttributes.put(key, value);
