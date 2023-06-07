@@ -28,7 +28,7 @@ Note: this architecture differs from the Apache PersistentManager implementation
 How this Plugin Works
 --------------------
 
-The following XML configuration is added to the Tomcat `context.xml` file (or the context block of the `server.xml` if applicable). As you can see, different plugin and generic pool properties can be added as required:
+The expected XML configuration is added to the Tomcat `context.xml` file (or the context block of the `server.xml` if applicable) in order to tell Tomcat that the Session Management will be customized. Different plugin and generic pool properties can be added as required. For instance:
 
     <Valve className="com.dotcms.tomcat.redissessions.RedisSessionHandlerValve" />
     <Manager className="com.dotcms.tomcat.redissessions.RedisSessionManager"
@@ -52,6 +52,7 @@ This plugin relies on the following JAR files, which are located in the `{TOMCAT
 
 If changing the configuration parameters directly in the `context.xml` file is not feasible, they can be specified via Environment Variables, or Java Properties in the dotCMS startup script:
 
+* `TOMCAT_REDIS_SESSION_CONFIG` -- In case the XML configuration as a whole needs to be updated
 * `TOMCAT_REDIS_SESSION_HOST`
 * `TOMCAT_REDIS_SESSION_PORT`
 * `TOMCAT_REDIS_SESSION_PASSWORD`
@@ -61,6 +62,12 @@ If changing the configuration parameters directly in the `context.xml` file is n
 * `TOMCAT_REDIS_SESSION_DATABASE`
 * `TOMCAT_REDIS_SESSION_TIMEOUT`
 * `TOMCAT_REDIS_SESSION_PERSISTENT_POLICIES`
+* `TOMCAT_REDIS_MAX_CONNECTIONS`
+* `TOMCAT_REDIS_MAX_IDLE_CONNECTIONS`
+* `TOMCAT_REDIS_MIN_IDLE_CONNECTIONS`
+* `TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC`
+
+Additionally, once dotCMS starts up, a section describing the initialization values for all these properties will be displayed in the `catalina.out` or `dotcms.log` file. By default, only sessions created by dotCMS for either the back-end or the front-end will be persisted to Redis. If you want to persist sessions created by anonymous traffic, you can set the `TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC` property to `true`.
 
 
 Docker Setup
@@ -81,7 +88,7 @@ dotcms-node:
         ..
         .
 ```
-Notice that there's a property called `TOMCAT_REDIS_SESSION_ENABLED` in the example configuration. If you remove it or set its value to `'false'` and restart your dotCMS container, the plugin will not be activated during startup and the application will handle Sessions as it used to.
+Notice that there's a property called `TOMCAT_REDIS_SESSION_ENABLED` in the example configuration. If you remove it or set its value to `'false'` and restart your dotCMS container, the plugin will not be activated during startup and the application will let Tomcat handle all Sessions in memory as usual.
 
 
 Local Environment Setup
@@ -91,13 +98,30 @@ For your local environment, you just need to go to the Tomcat `context.xml` file
 ```
     <!-- Uncomment this to enable Redis Session Management for Tomcat -->
     <!--
-    <Valve className="com.orangefunction.tomcat.redissessions.RedisSessionHandlerValve" />
-	<Manager className="com.orangefunction.tomcat.redissessions.RedisSessionManager" />
+    <Valve className="com.dotcms.tomcat.redissessions.RedisSessionHandlerValve" />
+	<Manager className="com.dotcms.tomcat.redissessions.RedisSessionManager" />
 	-->
 ```
 As stated in the first line, uncomment both the `Valve` and `Manager` tags for the plugin to be activated when dotCMS starts up. This configuration is what actually enables this plugin, so once you comment it back, dotCMS will handle Sessions as usual.
 
-Back in the `How this Plugin Works` section, you can see all the available configuration properties that can be set via Environment Variables or Java Properties.
+A local Redis Server must be up and running once the Redis Session Manager is enabled -- i.e., added to the `context.xml` file -- and dotCMS is started. Here's an example of a `docker-compose` file that sets up a simple password-protected Redis Server:
+```docker-compose
+version: '3.5'
+
+networks:
+  redis_net:
+
+services: 
+  redis:
+    image: "redis:latest"
+    command: redis-server --requirepass YOUR_P4SS_HERE
+    ports:
+      - "6379:6379"
+    networks:
+      - redis_net
+```
+
+Back in the `How this Plugin Works` section, you can see the most commonly used configuration properties that can be set via Environment Variables or Java Properties.
 
 
 Connection Pool Configuration
@@ -122,7 +146,7 @@ This feature can have the unintended consequence of hiding writes if you implici
     List myArray = session.getAttribute("myArray");
     myArray.add(additionalArrayValue);
 
-If your code makes these kind of changes, then the RedisSession provides a mechanism by which you can mark the session as dirty in order to guarantee serialization at the end of the request. For example:
+If your code makes this kind of changes, then the RedisSession provides a mechanism by which you can mark the session as dirty in order to guarantee serialization at the end of the request. For example:
 
     List myArray = session.getAttribute("myArray");
     myArray.add(additionalArrayValue);
