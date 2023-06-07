@@ -1,10 +1,11 @@
 package com.dotcms.tomcat.redissessions;
 
-import java.io.IOException;
-import javax.servlet.ServletException;
 import org.apache.catalina.connector.Request;
 import org.apache.catalina.connector.Response;
 import org.apache.catalina.valves.ValveBase;
+
+import javax.servlet.ServletException;
+import java.io.IOException;
 
 /**
  * This valve is responsible for making sure that the {@link RedisSessionManager#afterRequest()} method is called. The
@@ -19,7 +20,6 @@ import org.apache.catalina.valves.ValveBase;
 public class RedisSessionHandlerValve extends ValveBase {
 
     private RedisSessionManager manager;
-    private Request currentRequest;
 
     /**
      * Creates an instance of this Valve with the appropriate support for async operations.
@@ -32,19 +32,8 @@ public class RedisSessionHandlerValve extends ValveBase {
         this.manager = manager;
     }
 
-    /**
-     * Takes the current instance of the {@link Request} object so that the underlying {@link RedisSessionManager} can
-     * access it and interact with its data.
-     *
-     * @return The current {@link Request} object.
-     */
-    public Request getCurrentRequest() {
-        return this.currentRequest;
-    }
-
     @Override
     public void invoke(Request request, Response response) throws IOException, ServletException {
-        this.currentRequest = request;
         try {
             getNext().invoke(request, response);
         } finally {

@@ -1,14 +1,5 @@
 package com.dotcms.tomcat.util;
 
-import org.apache.catalina.connector.Request;
-
-import java.util.Collections;
-import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
-import static java.util.stream.Collectors.toSet;
-
 /**
  * Utility class that provides useful methods to access configuration properties for this plugin.
  *
@@ -27,21 +18,11 @@ public class ConfigUtil {
     public static final String REDIS_TIMEOUT_PROPERTY = "${TOMCAT_REDIS_SESSION_TIMEOUT}";
     public static final String REDIS_MAX_CONNECTIONS_PROPERTY = "${TOMCAT_REDIS_MAX_CONNECTIONS}";
     public static final String REDIS_MAX_IDLE_CONNECTIONS_PROPERTY = "${TOMCAT_REDIS_MAX_IDLE_CONNECTIONS";
-    public static final String REDIS_MIN_IDLE_CONNECTIONS_PROPERTY = "${TOMCAT_REDIS_MAX_IDLE_CONNECTIONS";
+    public static final String REDIS_MIN_IDLE_CONNECTIONS_PROPERTY = "${TOMCAT_REDIS_MIN_IDLE_CONNECTIONS";
     public static final String REDIS_PERSISTENT_POLICIES_PROPERTY = "${TOMCAT_REDIS_SESSION_PERSISTENT_POLICIES}";
 
     public static final String DOTCMS_CLUSTER_ID_PROPERTY = "${DOT_DOTCMS_CLUSTER_ID}";
     public static final String REDIS_ENABLED_FOR_ANON_TRAFFIC = "${TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC}";
-
-    public static final Set<String> BACKEND_FILTERED_REQUESTS = Stream.of(
-            "/api",
-            "/webdav",
-            "/c/",
-            "/html",
-            "/dotAdmin",
-            "/custom-elements",
-            "/dotcms-webcomponents",
-            "/dwr").collect(Collectors.collectingAndThen(toSet(), Collections::unmodifiableSet));
 
     /**
      * Returns the String value of the specified configuration property. Such a key can represent a Java Property or an
@@ -101,17 +82,6 @@ public class ConfigUtil {
             return (T) Boolean.valueOf(propertyValue.toString());
         }
         return (T) propertyValue;
-    }
-
-    /**
-     * Determines whether the URL specified in the HTTP Request maps to the dotCMS back-end or not.
-     *
-     * @param request The current {@link Request} object.
-     *
-     * @return If the incoming URL belongs to the dotCMS back-end, returns {@code true}.
-     */
-    public static boolean isBackEndRequest(final Request request) {
-        return null != request.getRequestURI() && BACKEND_FILTERED_REQUESTS.stream().anyMatch(backEndUrl -> request.getRequestURI().startsWith(backEndUrl));
     }
 
 }
