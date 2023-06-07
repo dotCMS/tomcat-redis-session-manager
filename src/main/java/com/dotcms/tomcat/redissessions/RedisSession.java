@@ -18,6 +18,8 @@ public class RedisSession extends StandardSession {
 
     private static final long serialVersionUID = 1L;
 
+    public static final String DOT_CLUSTER_SESSION = "DOT_CLUSTER_SESSION";
+
     private final Log log = LogFactory.getLog(RedisSession.class);
 
     protected static boolean manualDirtyTrackingSupportEnabled = false;

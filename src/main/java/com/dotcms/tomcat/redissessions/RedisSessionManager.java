@@ -321,9 +321,10 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
 
     /**
      * Determines whether the current Session must be persisted to Redis or not. In order to figure this out, a specific
-     * parameter named {@code "persist-session"} is added by the {@code com.dotcms.listeners.SessionMonitor} class in
-     * dotCMS in order to spot Sessions that are being created by the back-end. If that's the case, then it must always
-     * be persisted.
+     * parameter named {@code "DOT_CLUSTER_SESSION"} is added by the {@code com.dotcms.listeners.SessionMonitor} class
+     * in dotCMS in order to spot Sessions that are being created by both the back-end and the front-end. If that's the
+     * case, then it must always be persisted. These are the User Sessions that can be seen in the <b>Settings >
+     * Maintenance > Logged Users</b> portlet.
      * <p>However, if the {@link ConfigUtil#REDIS_ENABLED_FOR_ANON_TRAFFIC} property is set to true, then even Sessions
      * coming from front-end requests must be persisted as well.</p>
      *
@@ -333,8 +334,8 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
      */
     private boolean isSessionPersistable(final Session session) {
         boolean persistable = false;
-        if (null != session && null != ((RedisSession) session).getAttribute("persist-session")) {
-            persistable = (boolean) ((RedisSession) session).getAttribute("persist-session");
+        if (null != session && null != ((RedisSession) session).getAttribute(RedisSession.DOT_CLUSTER_SESSION)) {
+            persistable = (boolean) ((RedisSession) session).getAttribute(RedisSession.DOT_CLUSTER_SESSION);
         }
         return persistable || this.isAnonTrafficEnabled;
     }
