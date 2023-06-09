@@ -46,11 +46,11 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
         }
     }
 
-    protected byte[] NULL_SESSION = "null".getBytes();
+    protected static final byte[] NULL_SESSION = "null".getBytes();
     private final Log log = LogFactory.getLog(RedisSessionManager.class);
     protected String host = "localhost";
-    protected int port = 6379;
-    protected int database = 0;
+    protected int port = Protocol.DEFAULT_PORT;
+    protected int database = Protocol.DEFAULT_DATABASE;
     protected String password = null;
     protected int timeout = Protocol.DEFAULT_TIMEOUT;
     protected String sentinelMaster = null;
@@ -74,7 +74,8 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
     protected EnumSet<SessionPersistPolicy> sessionPersistPoliciesSet = EnumSet.of(SessionPersistPolicy.DEFAULT);
 
     /**
-     * Creates the Connection Pool Configuration object for the Redis connection.
+     * Creates the Connection Pool Configuration object for the Redis connection. Here, you can set the most important
+     * default values even before the Jedis configuration is initialized.
      *
      * @return The {@link ConnectionPoolConfig} object.
      */

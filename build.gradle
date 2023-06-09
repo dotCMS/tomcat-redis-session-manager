@@ -58,6 +58,10 @@ task wrapper(type: Wrapper) {
     gradleVersion = '4.10.2'
 }
 
+tasks.withType(JavaCompile) {
+    options.deprecation = true
+}
+
 // Artifactory configuration
 artifactory {
     contextUrl = 'https://repo.dotcms.com/artifactory'
