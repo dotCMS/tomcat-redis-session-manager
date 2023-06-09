@@ -1,10 +1,22 @@
+buildscript {
+    repositories {
+        maven {
+            url 'https://plugins.gradle.org/m2/'
+        }
+    }
+    dependencies {
+        classpath 'org.jfrog.buildinfo:build-info-extractor-gradle:4.10.0'
+    }
+}
+
 apply plugin: 'java'
 apply plugin: 'maven'
 apply plugin: 'signing'
 apply plugin: 'maven-publish'
+apply plugin: 'com.jfrog.artifactory'
 
-group = 'com.orangefunction'
-version = '2.11.1'
+group = 'com.dotcms'
+version = '1.0'
 
 repositories {
   mavenCentral()
@@ -46,52 +58,28 @@ task wrapper(type: Wrapper) {
     gradleVersion = '4.10.2'
 }
 
-publishing {
-
-
-    repositories {
-        maven {
-            url 'https://repo.dotcms.com/artifactory/libs-release-local'
-            credentials {
-                username  System.getenv("DOTCMS_ARTIFACTORY_USERNAME")
-                password  System.getenv("DOTCMS_ARTIFACTORY_PASSWORD")
-            }
+// Artifactory configuration
+artifactory {
+    contextUrl = 'https://repo.dotcms.com/artifactory'
+    publish {
+        repository {
+            repoKey = 'libs-release-local'
+            username = System.getenv("DOTCMS_ARTIFACTORY_USERNAME")
+            password = System.getenv("DOTCMS_ARTIFACTORY_PASSWORD")
+        }
+        defaults {
+            publications('mavenJava')
+            publishArtifacts = true
+            publishPom = true
         }
     }
 }
 
-
-
-uploadArchives {
-  repositories {
-    mavenDeployer {
-       repository(url: "file://localhost/tmp/myRepo/")
-      pom.project {
-        name 'tomcat-redis-session-manager'
-        packaging 'jar'
-        description 'Tomcat Redis Session Manager is a Tomcat extension to store sessions in Redis. Originally developed by James Coleman - https://github.com/jcoleman'
-        url 'https://github.com/dotCMS/tomcat-redis-session-manager'
-
-        issueManagement {
-          url 'https://github.com/dotCMS/tomcat-redis-session-manager/issues'
-          system 'GitHub Issues'
+// Maven configuration
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
         }
-
-        scm {
-          url 'https://github.com/dotCMS/tomcat-redis-session-manager'
-          connection 'scm:git:git://github.com/jcoleman/tomcat-redis-session-manager.git'
-          developerConnection 'scm:git:git@github.com:jcoleman/tomcat-redis-session-manager.git'
-        }
-
-        licenses {
-          license {
-            name 'MIT'
-            url 'https://opensource.org/licenses/MIT'
-            distribution 'repo'
-          }
-        }
-
-      }
     }
-  }
 }
