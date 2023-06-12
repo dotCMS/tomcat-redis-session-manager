@@ -16,6 +16,7 @@ import redis.clients.jedis.Protocol;
 import redis.clients.jedis.UnifiedJedis;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.Enumeration;
@@ -33,7 +34,20 @@ import java.util.Set;
  */
 public class RedisSessionManager extends ManagerBase implements Lifecycle {
 
+    /**
+     * This Enum allows users to tell this Manager the circumstances in which it must persist a given session to Redis.
+     * There are three types of {@link SessionPersistPolicy} values:
+     * <ol>
+     *      <li>{@link SessionPersistPolicy#DEFAULT}: Selected by default. It tells the manager to persist the
+     *      session in case its current attributes compared to the ones from Redis are different.</li>
+     *      <li>{@link SessionPersistPolicy#SAVE_ON_CHANGE}: It tells the manager to persist the session as
+     *      soon as any session attribute is added/changed.</li>
+     *     <li>{@link SessionPersistPolicy#ALWAYS_SAVE_AFTER_REQUEST}: It tells the manager to force
+     *      persisting thesession as soon as the request finishes.</li>
+     * </ol>
+     */
     enum SessionPersistPolicy {
+
         DEFAULT, SAVE_ON_CHANGE, ALWAYS_SAVE_AFTER_REQUEST;
 
         static SessionPersistPolicy fromName(final String name) {
@@ -44,6 +58,7 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
             }
             return DEFAULT;
         }
+
     }
 
     protected static final byte[] NULL_SESSION = "null".getBytes();
@@ -139,6 +154,11 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
         this.serializationStrategyClass = strategy;
     }
 
+    /**
+     * Returns the currently specified Session persist policies.
+     *
+     * @return The specified persist policies in the form of a String with comma-separated values.
+     */
     public String getSessionPersistPolicies() {
         final StringBuilder policies = new StringBuilder();
         for (final Iterator<SessionPersistPolicy> iter = this.sessionPersistPoliciesSet.iterator(); iter.hasNext();) {
@@ -151,6 +171,12 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
         return policies.toString();
     }
 
+    /**
+     * Allows you to set one or more session persist policies for this manager. The policies are set as a String with
+     * comma-separated value.
+     *
+     * @param sessionPersistPolicies The policies to set.
+     */
     public void setSessionPersistPolicies(final String sessionPersistPolicies) {
         final String[] policyArray = sessionPersistPolicies.split(",");
         final EnumSet<SessionPersistPolicy> policySet = EnumSet.of(SessionPersistPolicy.DEFAULT);
@@ -382,9 +408,9 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
         RedisSession session = null;
         if (null == id) {
             currentSessionIsPersisted.set(false);
-            currentSession.set(null);
-            currentSessionSerializationMetadata.set(null);
-            currentSessionId.set(null);
+            currentSession.remove();
+            currentSessionSerializationMetadata.remove();
+            currentSessionId.remove();
         } else if (id.equals(currentSessionId.get())) {
             session = currentSession.get();
         } else {
@@ -404,21 +430,12 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
                 currentSessionSerializationMetadata.set(new SessionSerializationMetadata());
             } else {
                 currentSessionIsPersisted.set(false);
-                currentSession.set(null);
-                currentSessionSerializationMetadata.set(null);
-                currentSessionId.set(null);
+                currentSession.remove();
+                currentSessionSerializationMetadata.remove();
+                currentSessionId.remove();
             }
         }
         return session;
-    }
-
-    public int getSize() {
-        return Long.valueOf(jedisPool.dbSize()).intValue();
-    }
-
-    public String[] keys() {
-        final Set<String> keySet = jedisPool.keys("*");
-        return keySet.toArray(new String[keySet.size()]);
     }
 
     /**
@@ -526,13 +543,12 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
                     log.trace("  " + en.nextElement());
                 }
             }
-            Boolean isCurrentSessionPersisted;
+            final Boolean isCurrentSessionPersisted = this.currentSessionIsPersisted.get();
             final SessionSerializationMetadata sessionSerializationMetadata = currentSessionSerializationMetadata.get();
             final byte[] originalSessionAttributesHash = sessionSerializationMetadata.getSessionAttributesHash();
-            byte[] sessionAttributesHash = null;
-            if (forceSave || redisSession.isDirty() || null == (isCurrentSessionPersisted = this.currentSessionIsPersisted.get())
-                            || !isCurrentSessionPersisted || !Arrays.equals(originalSessionAttributesHash,
-                                            (sessionAttributesHash = serializer.attributesHashFrom(redisSession)))) {
+            byte[] sessionAttributesHash = serializer.attributesHashFrom(redisSession);
+            if (forceSave || redisSession.isDirty() || null == isCurrentSessionPersisted
+                            || !isCurrentSessionPersisted || !Arrays.equals(originalSessionAttributesHash, sessionAttributesHash)) {
                 log.debug("Save was determined to be necessary");
 
                 if (null == sessionAttributesHash) {
@@ -585,43 +601,40 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
     }
 
     /**
-     * This method is called by the {@link RedisSessionHandlerValve} after request has been processed. It takes care of
-     * optionally saving the current Session -- if it's still valid -- or removing it in case it is not.
+     * This method is called by the {@link RedisSessionHandlerValve} after any HTTP Request has been processed. It
+     * takes care of saving the current Session -- if it's still valid -- or removing it in case it is not. It also
+     * differentiates "non-persistable" sessions from "persistable" ones, and handles them accordingly.
      */
     public void afterRequest() {
         final RedisSession redisSession = currentSession.get();
-        if (!this.isSessionPersistable(redisSession)) {
-            if (null != redisSession) {
-                if (redisSession.isValid()) {
+        if (null == redisSession) {
+            return;
+        }
+        final String sessionId = redisSession.getId();
+        try {
+            if (redisSession.isValid()) {
+                if (!this.isSessionPersistable(redisSession)) {
                     super.add(redisSession);
                 } else {
+                    log.debug("Request with session completed. Saving session: " + sessionId);
+                    this.save(redisSession, getAlwaysSaveAfterRequest());
+                }
+            } else {
+                if (!this.isSessionPersistable(redisSession)) {
                     super.remove(redisSession);
-                    currentSession.remove();
-                    currentSessionId.remove();
-                    currentSessionIsPersisted.remove();
+                } else {
+                    log.debug("HTTP Session has been invalidated. Removing session: " + sessionId);
+                    this.remove(redisSession);
                 }
             }
-        } else {
-            if (redisSession != null) {
-                final String sessionId = redisSession.getId();
-                try {
-                    if (redisSession.isValid()) {
-                        log.debug("Request with session completed, saving session: " + sessionId);
-                        this.save(redisSession, getAlwaysSaveAfterRequest());
-                    } else {
-                        log.debug("HTTP Session has been invalidated, removing: " + sessionId);
-                        this.remove(redisSession);
-                    }
-                } catch (final Exception e) {
-                    log.error("Error storing/removing session '" + sessionId + "': " + e.getMessage());
-                    log.debug(e);
-                } finally {
-                    currentSession.remove();
-                    currentSessionId.remove();
-                    currentSessionIsPersisted.remove();
-                    log.debug("Session removed from ThreadLocal: " + redisSession.getIdInternal());
-                }
-            }
+        } catch (final Exception e) {
+            log.error("Error storing/removing session with ID '" + sessionId + "': " + e.getMessage());
+            log.debug(e);
+        } finally {
+            currentSession.remove();
+            currentSessionId.remove();
+            currentSessionIsPersisted.remove();
+            log.debug("Request has finished. Session removed from ThreadLocal: " + redisSession.getIdInternal());
         }
     }
 
@@ -758,22 +771,6 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
     }
 
     /**
-     * Saves the specified key and its value to Redis <b>ONLY if it doesn't exist yet</b>. If it does, its value will
-     * NOT be updated.
-     * <p>If the value for the {@code DOT_DOTCMS_CLUSTER_ID} is specified, it'll be used to prefix they key. Doing this
-     * will allow multiple clusters to share the same Session Redis Store.</p>
-     *
-     * @param key   The key for the new entry.
-     * @param value Its serialized value.
-     *
-     * @return If the key has been set, returns 1. If the key already existed, returns 0.
-     */
-    protected Long setnx(final String key, final byte[] value) {
-        final String prefixedKey = this.prefix + key;
-        return this.jedisPool.setnx(prefixedKey.getBytes(), value);
-    }
-
-    /**
      * Retrieves the value for the specified key from Redis.
      * <p>If the value for the {@code DOT_DOTCMS_CLUSTER_ID} is specified, it'll be used to prefix they key. Doing this
      * will allow multiple clusters to share the same Session Redis Store.</p>
@@ -846,27 +843,27 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
     }
 
     public long getMaxWaitMillis() {
-        return this.connectionPoolConfig.getMaxWaitMillis();
+        return this.connectionPoolConfig.getMaxWaitDuration().toMillis();
     }
 
     public void setMaxWaitMillis(long maxWaitMillis) {
-        this.connectionPoolConfig.setMaxWaitMillis(maxWaitMillis);
+        this.connectionPoolConfig.setMaxWait(Duration.ofMillis(maxWaitMillis));
     }
 
     public long getMinEvictableIdleTimeMillis() {
-        return this.connectionPoolConfig.getMinEvictableIdleTimeMillis();
+        return this.connectionPoolConfig.getMinEvictableIdleDuration().toMillis();
     }
 
     public void setMinEvictableIdleTimeMillis(long minEvictableIdleTimeMillis) {
-        this.connectionPoolConfig.setMinEvictableIdleTimeMillis(minEvictableIdleTimeMillis);
+        this.connectionPoolConfig.setMinEvictableIdleTime(Duration.ofMillis(minEvictableIdleTimeMillis));
     }
 
     public long getSoftMinEvictableIdleTimeMillis() {
-        return this.connectionPoolConfig.getSoftMinEvictableIdleTimeMillis();
+        return this.connectionPoolConfig.getSoftMinEvictableIdleDuration().toMillis();
     }
 
     public void setSoftMinEvictableIdleTimeMillis(long softMinEvictableIdleTimeMillis) {
-        this.connectionPoolConfig.setSoftMinEvictableIdleTimeMillis(softMinEvictableIdleTimeMillis);
+        this.connectionPoolConfig.setSoftMinEvictableIdleTime(Duration.ofMillis(softMinEvictableIdleTimeMillis));
     }
 
     public int getNumTestsPerEvictionRun() {
@@ -910,11 +907,11 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
     }
 
     public long getTimeBetweenEvictionRunsMillis() {
-        return this.connectionPoolConfig.getTimeBetweenEvictionRunsMillis();
+        return this.connectionPoolConfig.getDurationBetweenEvictionRuns().toMillis();
     }
 
     public void setTimeBetweenEvictionRunsMillis(long timeBetweenEvictionRunsMillis) {
-        this.connectionPoolConfig.setTimeBetweenEvictionRunsMillis(timeBetweenEvictionRunsMillis);
+        this.connectionPoolConfig.setTimeBetweenEvictionRuns(Duration.ofMillis(timeBetweenEvictionRunsMillis));
     }
 
     public String getEvictionPolicyClassName() {
