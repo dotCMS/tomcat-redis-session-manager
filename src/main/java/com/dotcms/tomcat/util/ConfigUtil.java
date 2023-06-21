@@ -1,4 +1,4 @@
-package com.orangefunction.tomcat.util;
+package com.dotcms.tomcat.util;
 
 /**
  * Utility class that provides useful methods to access configuration properties for this plugin.
@@ -16,7 +16,13 @@ public class ConfigUtil {
     public static final String REDIS_SENTINELS_PROPERTY = "${TOMCAT_REDIS_SESSION_SENTINELS}";
     public static final String REDIS_DATABASE_PROPERTY = "${TOMCAT_REDIS_SESSION_DATABASE}";
     public static final String REDIS_TIMEOUT_PROPERTY = "${TOMCAT_REDIS_SESSION_TIMEOUT}";
+    public static final String REDIS_MAX_CONNECTIONS_PROPERTY = "${TOMCAT_REDIS_MAX_CONNECTIONS}";
+    public static final String REDIS_MAX_IDLE_CONNECTIONS_PROPERTY = "${TOMCAT_REDIS_MAX_IDLE_CONNECTIONS";
+    public static final String REDIS_MIN_IDLE_CONNECTIONS_PROPERTY = "${TOMCAT_REDIS_MIN_IDLE_CONNECTIONS";
     public static final String REDIS_PERSISTENT_POLICIES_PROPERTY = "${TOMCAT_REDIS_SESSION_PERSISTENT_POLICIES}";
+
+    public static final String DOTCMS_CLUSTER_ID_PROPERTY = "${DOT_DOTCMS_CLUSTER_ID}";
+    public static final String REDIS_ENABLED_FOR_ANON_TRAFFIC = "${TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC}";
 
     /**
      * Returns the String value of the specified configuration property. Such a key can represent a Java Property or an

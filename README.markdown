@@ -1,16 +1,20 @@
-Redis Session Manager for Apache Tomcat
+dotCMS Redis Session Manager for Apache Tomcat
 =======================================
 
 Overview
 --------
 
-A session manager implementation that stores sessions in Redis for easy distribution of requests across a cluster of Tomcat servers. Sessions are implemented as non-sticky -- that is, each request is able to go to any server in the cluster (unlike the Apache provided Tomcat clustering setup.)
+This session manager is an implementation that stores sessions in Redis for easy distribution of requests across a cluster of Tomcat servers. Sessions are implemented as non-sticky -- that is, each request is able to go to any server in the cluster (unlike the Apache provided Tomcat clustering setup.)
 
-Sessions are stored into Redis immediately upon creation for use by other servers. Sessions are loaded as requested directly from Redis (but subsequent requests for the session during the same request context will return a ThreadLocal cache rather than hitting Redis multiple times). In order to prevent collisions (and lost writes) as much as possible, session data is only updated in Redis if the session has been modified.
+Sessions are stored into Redis immediately as soon as they meet at least one of the following two conditions:
+1. They are being created right after a User logs into the dotCMS back-end, or an authenticated page in the front-end.
+2. The switch for storing absolutely all sessions in Redis is enabled -- more on this later on.
 
-The manager relies on the native expiration capability of Redis to expire keys for automatic session expiration to avoid the overhead of constantly searching the entire list of sessions for expired sessions.
+Sessions are loaded as requested directly from Redis (but subsequent requests for the session during the same request context will return a ThreadLocal cache rather than hitting Redis multiple times). In order to prevent collisions (and lost writes) as much as possible, session data is only updated in Redis if the session has been modified.
 
-Data stored in the session must be Serializable.
+The manager relies on the native expiration capability of Redis to expire keys for automatic session expiration to avoid the overhead of constantly searching the entire list of sessions for expired sessions. However, for usual front-end sessions -- or one-time hits coming from bots or image requests -- the expiration process will fall back to how Tomcat works originally. 
+
+Additionally, it's very important to note that absolutely all data stored in the session must be Serializable and not null. Otherwise, a warning message will be printed in the logs stating so, and indicating what specific attribute was not added to the Session.
 
 Tomcat Versions
 ---------------
@@ -23,15 +27,15 @@ Architecture
 * `RedisSessionManager`: Provides the session creation, saving, and loading functionality.
 * `RedisSessionHandlerValve`: Ensures that sessions are saved after a request is finished processing.
 
-Note: this architecture differs from the Apache PersistentManager implementation which implements persistent sticky sessions. Because that implementation expects all requests from a specific session to be routed to the same server, the timing persistence of sessions is non-deterministic since it is primarily for failover capabilities.
+Note: This architecture differs from the Apache `PersistentManager` implementation which implements persistent sticky sessions. Because that implementation expects all requests from a specific session to be routed to the same server, the timing persistence of sessions is non-deterministic since it is primarily for failover capabilities.
 
 How this Plugin Works
 --------------------
 
-The following XML configuration is added to the Tomcat `context.xml` file (or the context block of the `server.xml` if applicable):
+The expected XML configuration must be added to the Tomcat `context.xml` file (or the context block of the `server.xml`, if applicable) in order to tell Tomcat that the Session Management will be customized. Different plugin and generic pool properties can be added as required. For instance:
 
-    <Valve className="com.orangefunction.tomcat.redissessions.RedisSessionHandlerValve" />
-    <Manager className="com.orangefunction.tomcat.redissessions.RedisSessionManager"
+    <Valve className="com.dotcms.tomcat.redissessions.RedisSessionHandlerValve" />
+    <Manager className="com.dotcms.tomcat.redissessions.RedisSessionManager"
              host="localhost" <!-- optional: defaults to "localhost" -->
              port="6379" <!-- optional: defaults to "6379" -->
              database="0" <!-- optional: defaults to "0" -->
@@ -40,27 +44,63 @@ The following XML configuration is added to the Tomcat `context.xml` file (or th
              sentinelMaster="SentinelMasterName" <!-- optional -->
              sentinels="sentinel-host-1:port,sentinel-host-2:port,.." <!-- optional --> />
 
-It's very important to note that the `Valve` tag must be declared before the `Manager` tag.
+It's **very important to note** that the `Valve` tag must be declared before the `Manager` tag.
 
 This plugin relies on the following JAR files, which are located in the `{TOMCAT_BASE}/lib/` directory:
 
 * `commons-pool2-2.11.1.jar`
 * `gson-2.8.9.jar`
-* `jedis-4.2.0.jar` 
+* `jedis-4.4.1.jar` 
 * `slf4j-api-2.0.7.jar`
 * `tomcat-redis-session-manager-VERSION.jar` (the JAR generated by this project, of course)
 
-If changing the configuration parameters directly in the `context.xml` file is not feasible, they can be specified via Environment Variables, or Java Properties in the dotCMS startup script:
+If changing the configuration parameters directly in the `context.xml` file is not feasible, they can be specified via Environment Variables, or Java Properties in the dotCMS startup script. Here's a list with the properties most commonly used by the plugin:
 
+* `TOMCAT_REDIS_SESSION_CONFIG` -- In case the XML configuration as a whole needs to be updated
 * `TOMCAT_REDIS_SESSION_HOST`
 * `TOMCAT_REDIS_SESSION_PORT`
 * `TOMCAT_REDIS_SESSION_PASSWORD`
-* `TOMCAT_REDIS_SESSION_SSL_ENABLED`
-* `TOMCAT_REDIS_SESSION_SENTINEL_MASTER`
-* `TOMCAT_REDIS_SESSION_SENTINELS`
 * `TOMCAT_REDIS_SESSION_DATABASE`
 * `TOMCAT_REDIS_SESSION_TIMEOUT`
 * `TOMCAT_REDIS_SESSION_PERSISTENT_POLICIES`
+* `TOMCAT_REDIS_MAX_CONNECTIONS`
+* `TOMCAT_REDIS_MAX_IDLE_CONNECTIONS`
+* `TOMCAT_REDIS_MIN_IDLE_CONNECTIONS`
+* `DOT_DOTCMS_CLUSTER_ID`
+* `TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC`
+
+Additionally, once dotCMS starts up, a section describing the initialization values for all these properties will be displayed in the `catalina.out` or `dotcms.log` file so that it can be easily monitored by System Administrators. Here's an example of what such an output looks like:
+```
+12-Jun-2023 10:16:30.510 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.startInternal ====================================
+12-Jun-2023 10:16:30.510 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.startInternal Redis-managed Tomcat Session plugin
+12-Jun-2023 10:16:30.511 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.startInternal ====================================
+12-Jun-2023 10:16:30.511 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.startInternal - Attaching 'com.dotcms.tomcat.redissessions.RedisSessionManager' to 'com.dotcms.tomcat.redissessions.RedisSessionHandlerValve'
+12-Jun-2023 10:16:30.511 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeSerializer Attempting to use serializer: com.dotcms.tomcat.redissessions.JavaSerializer
+12-Jun-2023 10:16:30.512 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.startInternal - Initializing configuration parameters:
+12-Jun-2023 10:16:30.512 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeConfigParams -- TOMCAT_REDIS_SESSION_HOST: localhost
+12-Jun-2023 10:16:30.512 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeConfigParams -- TOMCAT_REDIS_SESSION_PORT: 6379
+12-Jun-2023 10:16:30.512 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeConfigParams -- TOMCAT_REDIS_SESSION_PASSWORD: - Set -
+12-Jun-2023 10:16:30.512 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeConfigParams -- TOMCAT_REDIS_SESSION_SSL_ENABLED: false
+12-Jun-2023 10:16:30.513 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeConfigParams -- TOMCAT_REDIS_SESSION_SENTINEL_MASTER: null
+12-Jun-2023 10:16:30.513 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeConfigParams -- TOMCAT_REDIS_SESSION_SENTINELS: null
+12-Jun-2023 10:16:30.513 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeConfigParams -- TOMCAT_REDIS_SESSION_DATABASE: 0
+12-Jun-2023 10:16:30.513 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeConfigParams -- TOMCAT_REDIS_SESSION_TIMEOUT: 2000
+12-Jun-2023 10:16:30.513 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeConfigParams -- TOMCAT_REDIS_SESSION_PERSISTENT_POLICIES: DEFAULT
+12-Jun-2023 10:16:30.513 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeConfigParams -- TOMCAT_REDIS_MAX_CONNECTIONS: 128
+12-Jun-2023 10:16:30.513 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeConfigParams -- TOMCAT_REDIS_MAX_IDLE_CONNECTIONS: 100
+12-Jun-2023 10:16:30.513 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeConfigParams -- TOMCAT_REDIS_MAX_IDLE_CONNECTIONS: 32
+12-Jun-2023 10:16:30.514 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeConfigParams -- DOT_DOTCMS_CLUSTER_ID (Redis Key Prefix): dotcms-redis-cluster
+12-Jun-2023 10:16:30.514 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeConfigParams -- TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC: false
+12-Jun-2023 10:16:30.514 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.startInternal - Initializing Redis connection
+SLF4J: No SLF4J providers were found.
+SLF4J: Defaulting to no-operation (NOP) logger implementation
+SLF4J: See https://www.slf4j.org/codes.html#noProviders for further details.
+12-Jun-2023 10:16:30.568 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.startInternal - Successful! Redis-managed Tomcat Sessions will expire after 1800 seconds.
+```
+
+The success message at the bottom indicates that the plugin has successfully connected to Redis and is ready to receive data. By default, only sessions created by dotCMS for either the back-end or the front-end will be persisted to Redis. If you want to persist sessions created by anonymous traffic, you can set the `TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC` property to `true`.
+
+Allowing multiple clusters to share the same session Redis store can be a very smart strategy. In order to accomplish this, you can specify the ID of the cluster via the `DOT_DOTCMS_CLUSTER_ID` property which is used to prefix all keys persisted to Redis. 
 
 
 Docker Setup
@@ -77,27 +117,45 @@ dotcms-node:
         TOMCAT_REDIS_SESSION_PASSWORD: 'MY_SECRET_P4SS'
         TOMCAT_REDIS_SESSION_SSL_ENABLED: 'false'
         TOMCAT_REDIS_SESSION_PERSISTENT_POLICIES: 'DEFAULT'
+        DOT_DOTCMS_CLUSTER_ID: 'dotcms-redis-cluster'
         ...
         ..
         .
 ```
-Notice that there's a property called `TOMCAT_REDIS_SESSION_ENABLED` in the example configuration. If you remove it or set its value to `'false'` and restart your dotCMS container, the plugin will not be activated during startup and the application will handle Sessions as it used to.
+Notice that there's a property called `TOMCAT_REDIS_SESSION_ENABLED` in the example configuration. If you remove it or set its value to `'false'` and restart your dotCMS container, the plugin will NOT be activated during startup and the application will let Tomcat handle all Sessions in memory as usual.
 
 
 Local Environment Setup
 -----------------------
 
-For your local environment, you just need to go to the Tomcat `context.xml` file and scroll down to the bottom of it:
+For your local environment, you need to go to the Tomcat `context.xml` file and scroll down to the bottom of it:
 ```
     <!-- Uncomment this to enable Redis Session Management for Tomcat -->
     <!--
-    <Valve className="com.orangefunction.tomcat.redissessions.RedisSessionHandlerValve" />
-	<Manager className="com.orangefunction.tomcat.redissessions.RedisSessionManager" />
+    <Valve className="com.dotcms.tomcat.redissessions.RedisSessionHandlerValve" />
+	<Manager className="com.dotcms.tomcat.redissessions.RedisSessionManager" />
 	-->
 ```
 As stated in the first line, uncomment both the `Valve` and `Manager` tags for the plugin to be activated when dotCMS starts up. This configuration is what actually enables this plugin, so once you comment it back, dotCMS will handle Sessions as usual.
 
-Back in the `How this Plugin Works` section, you can see all the available configuration properties that can be set via Environment Variables or Java Properties.
+A local Redis Server must be up and running before the Redis Session Manager is enabled -- i.e., added to the `context.xml` file -- and dotCMS is started. Here's an example of a `docker-compose` file that sets up a simple password-protected Redis Server:
+```docker-compose
+version: '3.5'
+
+networks:
+  redis_net:
+
+services: 
+  redis:
+    image: "redis:latest"
+    command: redis-server --requirepass YOUR_P4SS_HERE
+    ports:
+      - "6379:6379"
+    networks:
+      - redis_net
+```
+
+Back in the `How this Plugin Works` section, you can see the most commonly used configuration properties that can be set via Environment Variables or Java Properties.
 
 
 Connection Pool Configuration
@@ -108,7 +166,7 @@ All the configuration options from both `org.apache.commons.pool2.impl.GenericOb
 Session Change Tracking
 -----------------------
 
-As noted in the "Overview" section above, in order to prevent colliding writes, the Redis Session Manager only serializes the session object into Redis if the session object has changed (it always updates the expiration separately however.) This dirty tracking marks the session as needing serialization according to the following rules:
+As noted in the "Overview" section above, in order to prevent colliding writes, the Redis Session Manager only serializes the session object into Redis if the session object has changed (it always updates the expiration separately, however.) This dirty tracking marks the session as needing serialization according to the following rules:
 
 * Calling `session.removeAttribute(key)` always marks the session as dirty (needing serialization.)
 * Calling `session.setAttribute(key, newAttributeValue)` marks the session as dirty if any of the following are true:
@@ -122,7 +180,7 @@ This feature can have the unintended consequence of hiding writes if you implici
     List myArray = session.getAttribute("myArray");
     myArray.add(additionalArrayValue);
 
-If your code makes these kind of changes, then the RedisSession provides a mechanism by which you can mark the session as dirty in order to guarantee serialization at the end of the request. For example:
+If your code makes this kind of changes, then the RedisSession provides a mechanism by which you can mark the session as dirty in order to guarantee serialization at the end of the request. For example:
 
     List myArray = session.getAttribute("myArray");
     myArray.add(additionalArrayValue);

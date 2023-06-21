@@ -1,0 +1,27 @@
+name: 'Publish JAR to Artifactory'
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - closed
+
+jobs:
+  build-deploy-plugin:
+    runs-on: ubuntu-latest
+    env:
+      DOTCMS_ARTIFACTORY_USERNAME: ${{ secrets.ARTIFACTORY_USER }}
+      DOTCMS_ARTIFACTORY_PASSWORD: ${{ secrets.ARTIFACTORY_PASSWORD }}
+    steps:
+      - name: Check if the pull request was indeed merged
+        run: |
+          if [ "${{ github.event.pull_request.merged }}" != "true" ]; then
+            echo "Pull request was not merged. Exiting..."
+            exit 0
+          fi
+      - name: Checkout source code
+        uses: actions/checkout@v3
+      - name: Compiling code with Gradle Wrapper
+        run: ./gradlew clean jar
+      - name: Uploading JAR to Artifactory
+        run: ./gradlew artifactoryPublish

@@ -1,10 +1,11 @@
-package com.orangefunction.tomcat.redissessions;
+package com.dotcms.tomcat.redissessions;
 
-import java.io.IOException;
-import javax.servlet.ServletException;
 import org.apache.catalina.connector.Request;
 import org.apache.catalina.connector.Response;
 import org.apache.catalina.valves.ValveBase;
+
+import javax.servlet.ServletException;
+import java.io.IOException;
 
 /**
  * This valve is responsible for making sure that the {@link RedisSessionManager#afterRequest()} method is called. The
