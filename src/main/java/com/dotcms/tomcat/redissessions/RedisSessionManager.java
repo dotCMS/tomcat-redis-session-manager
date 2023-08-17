@@ -510,7 +510,7 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
         } catch (final ClassNotFoundException ex) {
             final String errorMsg = "Unable to deserialize data from session ID " + id + ": " + ex.getMessage();
             log.fatal(errorMsg);
-            log.info(ex);
+            log.debug(ex);
             throw new IOException(errorMsg);
         }
         return new DeserializedSessionContainer(session, metadata);
@@ -600,7 +600,7 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
             }
         } catch (final IOException e) {
             log.error("An error occurred when saving Session " + sessionId + ": " + e.getMessage());
-            log.info(e);
+            log.debug(e);
             throw e;
         }
     }
