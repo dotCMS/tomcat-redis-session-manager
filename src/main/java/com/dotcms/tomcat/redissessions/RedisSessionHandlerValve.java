@@ -33,11 +33,12 @@ public class RedisSessionHandlerValve extends ValveBase {
     }
 
     @Override
-    public void invoke(Request request, Response response) throws IOException, ServletException {
+    public void invoke(final Request request, final Response response) throws IOException, ServletException {
         try {
             getNext().invoke(request, response);
         } finally {
-            manager.afterRequest();
+            this.manager.afterRequest();
         }
     }
+
 }

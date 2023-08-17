@@ -1,15 +1,18 @@
 package com.dotcms.tomcat.redissessions;
 
+import org.apache.juli.logging.Log;
+import org.apache.juli.logging.LogFactory;
+
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.ObjectStreamException;
 import java.io.Serializable;
-import org.apache.juli.logging.Log;
-import org.apache.juli.logging.LogFactory;
 
-
+/**
+ * Stores and provides the hash of the Session attributes. An instance of this object is what gets stored in/read from
+ * the Redis server.
+ */
 public class SessionSerializationMetadata implements Serializable {
-
 
     private static final long serialVersionUID = 1L;
 
@@ -22,34 +25,40 @@ public class SessionSerializationMetadata implements Serializable {
     }
 
     public byte[] getSessionAttributesHash() {
-        return sessionAttributesHash;
+        return this.sessionAttributesHash;
     }
 
-    public void setSessionAttributesHash(byte[] sessionAttributesHash) {
+    public void setSessionAttributesHash(final byte[] sessionAttributesHash) {
         this.sessionAttributesHash = sessionAttributesHash;
     }
 
-    public void copyFieldsFrom(SessionSerializationMetadata metadata) {
+    /**
+     * Takes the available properties exposed by the Session Serialization Metadata object and copies them into this
+     * instance.
+     *
+     * @param metadata The {@link SessionSerializationMetadata} instance whose values need to be read.
+     */
+    public void copyFieldsFrom(final SessionSerializationMetadata metadata) {
         this.setSessionAttributesHash(metadata.getSessionAttributesHash());
     }
 
-    private void writeObject(ObjectOutputStream out) throws Exception {
+    private void writeObject(final ObjectOutputStream out) throws Exception {
         try {
-            out.writeInt(sessionAttributesHash.length);
+            out.writeInt(this.sessionAttributesHash.length);
             out.write(this.sessionAttributesHash);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             log.error(e);
             throw e;
         }
     }
 
-    private void readObject(ObjectInputStream in) throws Exception {
+    private void readObject(final ObjectInputStream in) throws Exception {
         try {
             int hashLength = in.readInt();
             byte[] sessionAttributesHash = new byte[hashLength];
             in.read(sessionAttributesHash, 0, hashLength);
             this.sessionAttributesHash = sessionAttributesHash;
-        } catch (Exception e) {
+        } catch (final Exception e) {
             log.error(e);
             throw e;
         }
