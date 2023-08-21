@@ -129,7 +129,6 @@ public class RedisSession extends StandardSession {
                 log.warn(String.format("Value of key '%s' is not serializable. Removing it from Session '%s'", key,
                         this.id));
             }
-            super.removeAttribute(key);
         }
         if ((value != null || oldValue != null)
                 && (value == null && oldValue != null
