@@ -16,10 +16,12 @@ The manager relies on the native expiration capability of Redis to expire keys f
 
 Additionally, it's very important to note that absolutely all data stored in the session must be Serializable and not null. Otherwise, a warning message will be printed in the logs stating so, and indicating what specific attribute was not added to the Session.
 
+
 Tomcat Versions
 ---------------
 
 This project currently supports Tomcat 9.0.60. Greater or lower versions must be tested and adjusted accordingly.
+
 
 Architecture
 ------------
@@ -29,11 +31,12 @@ Architecture
 
 Note: This architecture differs from the Apache `PersistentManager` implementation which implements persistent sticky sessions. Because that implementation expects all requests from a specific session to be routed to the same server, the timing persistence of sessions is non-deterministic since it is primarily for failover capabilities.
 
+
 How this Plugin Works
 --------------------
 
 The expected XML configuration must be added to the Tomcat `context.xml` file (or the context block of the `server.xml`, if applicable) in order to tell Tomcat that the Session Management will be customized. Different plugin and generic pool properties can be added as required. For instance:
-
+```xml
     <Valve className="com.dotcms.tomcat.redissessions.RedisSessionHandlerValve" />
     <Manager className="com.dotcms.tomcat.redissessions.RedisSessionManager"
              host="localhost" <!-- optional: defaults to "localhost" -->
@@ -43,7 +46,7 @@ The expected XML configuration must be added to the Tomcat `context.xml` file (o
              sessionPersistPolicies="PERSIST_POLICY_1,PERSIST_POLICY_2,.." <!-- optional -->
              sentinelMaster="SentinelMasterName" <!-- optional -->
              sentinels="sentinel-host-1:port,sentinel-host-2:port,.." <!-- optional --> />
-
+```
 It's **very important to note** that the `Valve` tag must be declared before the `Manager` tag.
 
 This plugin relies on the following JAR files, which are located in the `{TOMCAT_BASE}/lib/` directory:
@@ -66,13 +69,14 @@ If changing the configuration parameters directly in the `context.xml` file is n
 * `TOMCAT_REDIS_MAX_CONNECTIONS`
 * `TOMCAT_REDIS_MAX_IDLE_CONNECTIONS`
 * `TOMCAT_REDIS_MIN_IDLE_CONNECTIONS`
-* `DOT_DOTCMS_CLUSTER_ID`
 * `TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC`
+* `TOMCAT_REDIS_UNDEFINED_SESSION_TYPE_TIMEOUT`
+* `DOT_DOTCMS_CLUSTER_ID`
 
 Additionally, once dotCMS starts up, a section describing the initialization values for all these properties will be displayed in the `catalina.out` or `dotcms.log` file so that it can be easily monitored by System Administrators. Here's an example of what such an output looks like:
 ```
 12-Jun-2023 10:16:30.510 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.startInternal ====================================
-12-Jun-2023 10:16:30.510 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.startInternal Redis-managed Tomcat Session plugin
+12-Jun-2023 10:16:30.510 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.startInternal Redis-based Tomcat Session plugin
 12-Jun-2023 10:16:30.511 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.startInternal ====================================
 12-Jun-2023 10:16:30.511 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.startInternal - Attaching 'com.dotcms.tomcat.redissessions.RedisSessionManager' to 'com.dotcms.tomcat.redissessions.RedisSessionHandlerValve'
 12-Jun-2023 10:16:30.511 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeSerializer Attempting to use serializer: com.dotcms.tomcat.redissessions.JavaSerializer
@@ -89,13 +93,16 @@ Additionally, once dotCMS starts up, a section describing the initialization val
 12-Jun-2023 10:16:30.513 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeConfigParams -- TOMCAT_REDIS_MAX_CONNECTIONS: 128
 12-Jun-2023 10:16:30.513 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeConfigParams -- TOMCAT_REDIS_MAX_IDLE_CONNECTIONS: 100
 12-Jun-2023 10:16:30.513 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeConfigParams -- TOMCAT_REDIS_MAX_IDLE_CONNECTIONS: 32
-12-Jun-2023 10:16:30.514 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeConfigParams -- DOT_DOTCMS_CLUSTER_ID (Redis Key Prefix): dotcms-redis-cluster
 12-Jun-2023 10:16:30.514 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeConfigParams -- TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC: false
+12-Jun-2023 10:16:30.514 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeConfigParams -- TOMCAT_REDIS_UNDEFINED_SESSION_TYPE_TIMEOUT: 15
+12-Jun-2023 10:16:30.514 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeConfigParams -- DOT_DOTCMS_CLUSTER_ID (Redis Key Prefix): dotcms-redis-cluster
 12-Jun-2023 10:16:30.514 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.startInternal - Initializing Redis connection
 SLF4J: No SLF4J providers were found.
 SLF4J: Defaulting to no-operation (NOP) logger implementation
 SLF4J: See https://www.slf4j.org/codes.html#noProviders for further details.
+12-Jun-2023 10:16:30.568 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.startInternal - 
 12-Jun-2023 10:16:30.568 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.startInternal - Successful! Redis-managed Tomcat Sessions will expire after 1800 seconds.
+12-Jun-2023 10:16:30.568 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.startInternal - 
 ```
 
 The success message at the bottom indicates that the plugin has successfully connected to Redis and is ready to receive data. By default, only sessions created by dotCMS for either the back-end or the front-end will be persisted to Redis. If you want to persist sessions created by anonymous traffic, you can set the `TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC` property to `true`.
@@ -107,7 +114,7 @@ Docker Setup
 ------------
 
 In your `docker-compose.yml` file, go to the `environment` section of your dotCMS node configuration and add the configuration properties you deem necessary. For instance:
-```
+```yml
 dotcms-node:
     image: dotcms/dotcms:master
     environment:       
@@ -129,7 +136,7 @@ Local Environment Setup
 -----------------------
 
 For your local environment, you need to go to the Tomcat `context.xml` file and scroll down to the bottom of it:
-```
+```xml
     <!-- Uncomment this to enable Redis Session Management for Tomcat -->
     <!--
     <Valve className="com.dotcms.tomcat.redissessions.RedisSessionHandlerValve" />
@@ -139,11 +146,14 @@ For your local environment, you need to go to the Tomcat `context.xml` file and 
 As stated in the first line, uncomment both the `Valve` and `Manager` tags for the plugin to be activated when dotCMS starts up. This configuration is what actually enables this plugin, so once you comment it back, dotCMS will handle Sessions as usual.
 
 A local Redis Server must be up and running before the Redis Session Manager is enabled -- i.e., added to the `context.xml` file -- and dotCMS is started. Here's an example of a `docker-compose` file that sets up a simple password-protected Redis Server:
-```docker-compose
+```yml
 version: '3.5'
 
 networks:
   redis_net:
+
+volumes:
+  redisdata:
 
 services: 
   redis:
@@ -151,6 +161,8 @@ services:
     command: redis-server --requirepass YOUR_P4SS_HERE
     ports:
       - "6379:6379"
+    volumes:
+      - redisdata:/data
     networks:
       - redis_net
 ```
@@ -162,6 +174,22 @@ Connection Pool Configuration
 -----------------------------
 
 All the configuration options from both `org.apache.commons.pool2.impl.GenericObjectPoolConfig` and `org.apache.commons.pool2.impl.BaseObjectPoolConfig` are also configurable for the Redis connection pool used by the session manager. To configure any of these attributes (e.g., `maxIdle` and `testOnBorrow`) just use the config attribute name prefixed with `connectionPool` (e.g., `connectionPoolMaxIdle` and `connectionPoolTestOnBorrow`) and set the desired value in the `<Manager>` declaration in your Tomcat context.xml.
+
+
+Plugin's Logging
+--------------------
+
+By default, and for security reasons, minimal initialization information is logged when dotCMS starts up. This is basically meant to let you know that the plugin is actually present, and is enabled. If more detailed information is required, you just need to follow these steps:
+
+* Go to `{TOMCAT_HOME}/conf/logging.properties` file.
+* Scroll down to the bottom, and add an entry for every class in this plugin for which you want to increase the logging level. For instance, if you need the `RedisSessionManager` class to log more information, add this:
+```
+com.dotcms.tomcat.redissessions.RedisSessionManager.level = FINE
+```
+* Restart dotCMS and check the `catalina.out` file.
+
+It's important to notice that this operation should only be carried out under specific circumstances. Given the number of threads spawned by Tomcat, the additional logging can be overwhelming, hard to read, and fill the logs in a very short time. For more information on the different logging levels, please refer to the [Apache Tomcat Logging](https://tomcat.apache.org/tomcat-9.0-doc/logging.html) documentation.
+
 
 Session Change Tracking
 -----------------------
@@ -176,29 +204,31 @@ As noted in the "Overview" section above, in order to prevent colliding writes, 
     * `!newAttributeValue.equals(previousAttributeValue)`
 
 This feature can have the unintended consequence of hiding writes if you implicitly change a key in the session or if the object's equality does not change even though the key is updated. For example, assuming the session already contains the key `"myArray"` with an Array instance as its corresponding value, and has been previously serialized, the following code would not cause the session to be serialized again:
-
+```java
     List myArray = session.getAttribute("myArray");
     myArray.add(additionalArrayValue);
-
-If your code makes this kind of changes, then the RedisSession provides a mechanism by which you can mark the session as dirty in order to guarantee serialization at the end of the request. For example:
-
+```
+If your code makes this kind of change, then the RedisSession provides a mechanism by which you can mark the session as dirty in order to guarantee serialization at the end of the request. For example:
+```java
     List myArray = session.getAttribute("myArray");
     myArray.add(additionalArrayValue);
     session.setAttribute("__changed__");
-
+```
 In order to not cause issues with an application that may already use the key `"__changed__"`, this feature is disabled by default. To enable this feature, simple call the following code in your application's initialization:
-
+```java
     RedisSession.setManualDirtyTrackingSupportEnabled(true);
-
+```
 This feature also allows the attribute key used to mark the session as dirty to be changed. For example, if you executed the following:
-
+```java
     RedisSession.setManualDirtyTrackingAttributeKey("customDirtyFlag");
-
+```
 Then the example above would look like this:
-
+```java
     List myArray = session.getAttribute("myArray");
     myArray.add(additionalArrayValue);
     session.setAttribute("customDirtyFlag");
+```
+
 
 Persistence Policies
 --------------------
@@ -207,10 +237,11 @@ With a persistent session storage there is going to be the distinct possibility 
 
 Since each situation is different, the manager gives you several options which control the details of when/how sessions are persisted. Each of the following options may be selected by setting the `sessionPersistPolicies="PERSIST_POLICY_1,PERSIST_POLICY_2,.."` attributes in your manager declaration in Tomcat's context.xml. Unless noted otherwise, the various options are all combinable.
 
-- `SAVE_ON_CHANGE`: every time `session.setAttribute()` or `session.removeAttribute()` is called the session will be saved. __Note:__ This feature cannot detect changes made to objects already stored in a specific session attribute. __Tradeoffs__: This option will degrade performance slightly as any change to the session will save the session synchronously to Redis.
-- `ALWAYS_SAVE_AFTER_REQUEST`: force saving after every request, regardless of whether or not the manager has detected changes to the session. This option is particularly useful if you make changes to objects already stored in a specific session attribute. __Tradeoff:__ This option make actually increase the liklihood of race conditions if not all of your requests change the session.
+- `SAVE_ON_CHANGE`: Every time either the `session.setAttribute()` or `session.removeAttribute()` methods are called, the session will be saved. __Note:__ This feature cannot detect changes made to objects already stored in a specific session attribute. __Tradeoffs__: This option will degrade performance slightly as any change to the session will save it synchronously to Redis.
+- `ALWAYS_SAVE_AFTER_REQUEST`: Force saving after every request, whether the manager has detected changes to the session or not. This option is particularly useful if you make changes to objects already stored in a specific session attribute. __Tradeoff:__ This option make actually increase the likelihood of race conditions if not all of your requests change the session.
+
 
 Acknowledgements
 ----------------
 
-The architecture of this project was based on the following project: https://github.com/TechniqueSoftware/tomcat-redis-session-manager
+The architecture of this project was based on the following project: https://github.com/jcoleman/tomcat-redis-session-manager

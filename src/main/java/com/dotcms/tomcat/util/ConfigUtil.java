@@ -1,7 +1,10 @@
 package com.dotcms.tomcat.util;
 
 /**
- * Utility class that provides useful methods to access configuration properties for this plugin.
+ * Utility class that provides useful methods to access configuration properties for this plugin. If a property needs to
+ * be added, removed or have its default value updated, make sure that the
+ * {@code docker/dotcms/ROOT/srv/00-config-defaults.sh} file in the dotCMS Core repository is updated accordingly. This
+ * way, such changes will be available as environment variables configurable in a Docker instance.
  *
  * @author Jose Castro
  * @since May 3rd, 2023
@@ -20,9 +23,9 @@ public class ConfigUtil {
     public static final String REDIS_MAX_IDLE_CONNECTIONS_PROPERTY = "${TOMCAT_REDIS_MAX_IDLE_CONNECTIONS";
     public static final String REDIS_MIN_IDLE_CONNECTIONS_PROPERTY = "${TOMCAT_REDIS_MIN_IDLE_CONNECTIONS";
     public static final String REDIS_PERSISTENT_POLICIES_PROPERTY = "${TOMCAT_REDIS_SESSION_PERSISTENT_POLICIES}";
-
-    public static final String DOTCMS_CLUSTER_ID_PROPERTY = "${DOT_DOTCMS_CLUSTER_ID}";
     public static final String REDIS_ENABLED_FOR_ANON_TRAFFIC = "${TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC}";
+    public static final String REDIS_UNDEFINED_SESSION_TYPE_TIMEOUT = "${TOMCAT_REDIS_UNDEFINED_SESSION_TYPE_TIMEOUT}";
+    public static final String DOTCMS_CLUSTER_ID_PROPERTY = "${DOT_DOTCMS_CLUSTER_ID}";
 
     /**
      * Returns the String value of the specified configuration property. Such a key can represent a Java Property or an
@@ -33,7 +36,7 @@ public class ConfigUtil {
      * @return The String value of the specified configuration property.
      */
     public static String getConfigProperty(String key) {
-        if (null == key) {
+        if (null == key || key.isEmpty()) {
             return null;
         }
         int fromIndex = 0;
@@ -67,7 +70,8 @@ public class ConfigUtil {
      *
      * @return The String value of the specified configuration property.
      */
-    public static <T> T getConfigProperty(String key, final T defaultValue) {
+    @SuppressWarnings("unchecked")
+    public static <T> T getConfigProperty(final String key, final T defaultValue) {
         final Object propertyValue = getConfigProperty(key);
         if (null == propertyValue || key.equals(propertyValue)) {
             return defaultValue;
