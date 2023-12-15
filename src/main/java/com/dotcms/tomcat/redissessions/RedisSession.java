@@ -98,11 +98,9 @@ public class RedisSession extends StandardSession {
      *     <li>The {@code TOMCAT_REDIS_SESSION_PERSISTENT_POLICIES} contains the
      *     {@link RedisSessionManager.SessionPersistPolicy#SAVE_ON_CHANGE} policy in it.</li>
      *     <li>If it does, then at least one of the following criteria must be met:</li>
-     *     <ol>
-     *         <li>Either the new value or the existing value of the added attribute <b>ARE NOT NULL</b>.</li>
-     *         <li>The class of the new value compared to the existing value is different.</li>
-     *         <li>The new value is actually different from the existing value.</li>
-     *     </ol>
+     *     <li>Either the new value or the existing value of the added attribute <b>ARE NOT NULL</b>.</li>
+     *     <li>The class of the new value compared to the existing value is different.</li>
+     *     <li>The new value is actually different from the existing value.</li>
      * </ol>
      * <p>
      * After this method executes, and if the object implements <code>HttpSessionBindingListener</code>, the container

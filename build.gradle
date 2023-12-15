@@ -16,7 +16,7 @@ apply plugin: 'maven-publish'
 apply plugin: 'com.jfrog.artifactory'
 
 group = 'com.dotcms'
-version = '1.0'
+version = '1.1'
 
 repositories {
   mavenCentral()
@@ -28,13 +28,11 @@ compileJava {
 }
 
 dependencies {
-  compile group: 'org.apache.tomcat', name: 'tomcat-catalina', version: '9.0.41'
-  compile group: 'redis.clients', name: 'jedis', version: '4.4.1'
-  compile group: 'org.apache.commons', name: 'commons-pool2', version: '2.2'
-  compile group: 'commons-codec', name: 'commons-codec', version: '1.9'
-  implementation 'redis.clients:jedis:4.4.1'
+    compile group: 'org.apache.tomcat', name: 'tomcat-catalina', version: '9.0.41'
+    implementation 'redis.clients:jedis:4.4.6'
+    compile group: 'org.apache.commons', name: 'commons-pool2', version: '2.9.0'
 
-  testCompile group: 'org.apache.tomcat', name: 'tomcat-coyote', version: '9.0.41'
+    testCompile group: 'org.apache.tomcat', name: 'tomcat-coyote', version: '9.0.41'
 }
 
 task javadocJar(type: Jar, dependsOn: javadoc) {
