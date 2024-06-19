@@ -1,0 +1,20 @@
+networks:
+  redis_net:
+
+services:
+  redis:
+    image: "redis:latest"
+    command: redis-server /data/redis.conf
+    ports:
+      - "6379:6379"
+    networks:
+      - redis_net
+    volumes:
+      - {YOUR-ABSOLUTE-PATH}/redis.conf:/data/redis.conf
+      - {YOUR-ABSOLUTE-PATH}/users.acl:/data/users.acl
+      
+# ------------------------------------------------------------------------
+# Use the following command to log into the Redis CLI:
+#
+# redis-cli -h localhost -p 6379 --user dotcms --pass strongpassword
+# ------------------------------------------------------------------------

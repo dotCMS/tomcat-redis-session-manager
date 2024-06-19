@@ -13,6 +13,7 @@ public class ConfigUtil {
 
     public static final String REDIS_HOST_PROPERTY = "${TOMCAT_REDIS_SESSION_HOST}";
     public static final String REDIS_PORT_PROPERTY = "${TOMCAT_REDIS_SESSION_PORT}";
+    public static final String REDIS_USERNAME_PROPERTY = "${TOMCAT_REDIS_SESSION_USERNAME}";
     public static final String REDIS_PASSWORD_PROPERTY = "${TOMCAT_REDIS_SESSION_PASSWORD}";
     public static final String REDIS_SSL_ENABLED_PROPERTY = "${TOMCAT_REDIS_SESSION_SSL_ENABLED}";
     public static final String REDIS_SENTINEL_MASTER_PROPERTY = "${TOMCAT_REDIS_SESSION_SENTINEL_MASTER}";
