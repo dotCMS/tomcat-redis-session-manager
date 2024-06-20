@@ -61,7 +61,7 @@ tasks.withType(JavaCompile) {
 
 // Artifactory configuration
 artifactory {
-    contextUrl = 'https://repo.dotcms.com/ui/repos/tree/General'
+    contextUrl = 'https://repo.dotcms.com/artifactory'
     publish {
         repository {
             repoKey = 'libs-release-local'
