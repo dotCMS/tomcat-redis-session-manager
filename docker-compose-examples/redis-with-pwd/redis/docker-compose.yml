@@ -1,0 +1,23 @@
+networks:
+  redis_net:
+
+volumes:
+  redisdata:
+
+services: 
+  redis:
+    image: "redis:latest"
+    command: redis-server --requirepass MY_SECRET_P4SS
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    networks:
+      - redis_net
+      
+      
+# ------------------------------------------------------------------------
+# Use the following command to log into the Redis CLI:
+#
+# redis-cli -a MY_SECRET_P4SS
+# ------------------------------------------------------------------------

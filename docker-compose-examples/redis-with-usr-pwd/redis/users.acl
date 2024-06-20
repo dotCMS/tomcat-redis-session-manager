@@ -1,0 +1,2 @@
+user default on sanitize-payload #05926fd3e6ec8c13c5da5205b546037bdcf861528e0bdb22e9cece29e567a1bc ~* &* +@all
+user dotcms on sanitize-payload #05926fd3e6ec8c13c5da5205b546037bdcf861528e0bdb22e9cece29e567a1bc ~* &* +@all
