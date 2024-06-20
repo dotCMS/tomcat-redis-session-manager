@@ -16,7 +16,7 @@ apply plugin: 'maven-publish'
 apply plugin: 'com.jfrog.artifactory'
 
 group = 'com.dotcms'
-version = '1.1'
+version = '1.2'
 
 repositories {
   mavenCentral()
@@ -28,11 +28,10 @@ compileJava {
 }
 
 dependencies {
-    compile group: 'org.apache.tomcat', name: 'tomcat-catalina', version: '9.0.41'
+    compile group: 'org.apache.tomcat', name: 'tomcat-catalina', version: '9.0.85'
     implementation 'redis.clients:jedis:4.4.6'
-    compile group: 'org.apache.commons', name: 'commons-pool2', version: '2.9.0'
-
-    testCompile group: 'org.apache.tomcat', name: 'tomcat-coyote', version: '9.0.41'
+    compile group: 'org.apache.commons', name: 'commons-pool2', version: '2.11.1'
+    testCompile group: 'org.apache.tomcat', name: 'tomcat-coyote', version: '9.0.85'
 }
 
 task javadocJar(type: Jar, dependsOn: javadoc) {
@@ -62,7 +61,7 @@ tasks.withType(JavaCompile) {
 
 // Artifactory configuration
 artifactory {
-    contextUrl = 'https://repo.dotcms.com/artifactory'
+    contextUrl = 'https://repo.dotcms.com/ui/repos/tree/General'
     publish {
         repository {
             repoKey = 'libs-release-local'
