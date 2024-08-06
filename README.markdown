@@ -124,6 +124,13 @@ SLF4J: See https://www.slf4j.org/codes.html#noProviders for further details.
 12-Jun-2023 10:16:30.568 INFO [main] com.dotcms.tomcat.redissessions.RedisSessionManager.initializeRedisConnection - 
 ```
 
+For security reasons, the values of following two properties:
+
+* `TOMCAT_REDIS_SESSION_USERNAME`
+* `TOMCAT_REDIS_SESSION_PASSWORD`
+
+Will NOT be displayed in the log. Instead, the String `- Set -` will be displayed if a value has been set for them, and `- Not Set -` if it hasn't.
+
 The success message at the bottom is the key indicator that the plugin has successfully connected to Redis and is ready to receive data. By default, only sessions created by dotCMS for either the back-end or the front-end will be persisted to Redis. If you want to persist sessions created by anonymous traffic, you can set the `TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC` property to `true`.
 
 Allowing multiple clusters to share the same session Redis store can be a very smart strategy. In order to accomplish this, you can specify the ID of the cluster via the `DOT_DOTCMS_CLUSTER_ID` property which is used to prefix all keys persisted to Redis. 
@@ -157,7 +164,8 @@ Local Environment Setup
 In your local environment, you need to go to the Tomcat `context.xml` file, scroll down to the bottom, and add the following code:
 ```xml
     <Valve className="com.dotcms.tomcat.redissessions.RedisSessionHandlerValve" />
-    <Manager className="com.dotcms.tomcat.redissessions.RedisSessionManager" />
+    <Manager className="com.dotcms.tomcat.redissessions.RedisSessionManager"
+         password="YOUR_P4SS_HERE"/>
 ```
 For the plugin to be activated when dotCMS starts up. This configuration is what actually enables this plugin, so once you comment it back, dotCMS will go back to letting Tomcat handle its Sessions, as usual.
 
@@ -181,15 +189,15 @@ services:
       - redis_net
 ```
 
-If you need to set up a Redis Server that requires both username and password, please refer to the sample `docker-compose` file here: `docker-compose-examples/redis-with-usr-pwd/redis/docker-compose.yml`.
+**IMPORTANT:** If you need to set up a Redis Server that requires both username and password, please refer to the sample `docker-compose` file here: `docker-compose-examples/redis-with-usr-pwd/redis/docker-compose.yml`.
 
-Please refer to the `Configuration Parameters` section in case you need to enable/disable additional configuration properties for Redis via Environment Variables or Java Properties.
+Please refer to the `Configuration Parameters` section in case you need to enable/disable additional configuration properties for Redis via Environment Variables or Java Properties. For instance, when using the `docker-compose` file above, you'll need to specify both the `username` and `password` attributes.
 
 
 Connection Pool Configuration
 -----------------------------
 
-All the configuration options from both `org.apache.commons.pool2.impl.GenericObjectPoolConfig` and `org.apache.commons.pool2.impl.BaseObjectPoolConfig` are also configurable for the Redis connection pool used by the session manager. To configure any of these attributes (e.g., `maxIdle` and `testOnBorrow`) just use the config attribute name prefixed with `connectionPool` (e.g., `connectionPoolMaxIdle` and `connectionPoolTestOnBorrow`) and set the desired value in the `<Manager>` declaration in your Tomcat context.xml.
+All the configuration options from both `org.apache.commons.pool2.impl.GenericObjectPoolConfig` and `org.apache.commons.pool2.impl.BaseObjectPoolConfig` are also configurable for the Redis connection pool used by the session manager. To configure any of these attributes (e.g., `maxIdle` and `testOnBorrow`) just use the config attribute name prefixed with `connectionPool` (e.g., `connectionPoolMaxIdle` and `connectionPoolTestOnBorrow`) and set the desired value in the `<Manager>` declaration in your Tomcat's `context.xml` file.
 
 
 Plugin's Logging
@@ -197,7 +205,7 @@ Plugin's Logging
 
 By default, and for security reasons, minimal initialization information is logged when dotCMS starts up. This is basically meant to let you know that the plugin is actually present, and is enabled. If more detailed information is required, you just need to follow these steps:
 
-* Go to `{TOMCAT_HOME}/conf/logging.properties` file.
+* Go to the `{TOMCAT_HOME}/conf/logging.properties` file.
 * Scroll down to the bottom, and add an entry for every class in this plugin for which you want to increase the logging level. For instance, if you need the `RedisSessionManager` class to log more information, add this:
 ```
 com.dotcms.tomcat.redissessions.RedisSessionManager.level = FINE
