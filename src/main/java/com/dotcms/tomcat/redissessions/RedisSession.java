@@ -18,11 +18,18 @@ public class RedisSession extends StandardSession {
 
     private static final long serialVersionUID = 1L;
 
-    public static final String DOT_CLUSTER_SESSION = "DOT_CLUSTER_SESSION";
-
     private final Log log = LogFactory.getLog(RedisSession.class);
 
-    protected static boolean manualDirtyTrackingSupportEnabled = false;
+    public static final String DOT_CLUSTER_SESSION_ATTR = "DOT_CLUSTER_SESSION";
+
+    protected HashMap<String, Object> changedAttributes;
+    protected boolean dirty = false;
+
+    protected static String manualDirtyTrackingAttributeKey = "__dot_session_attribute_changed__";
+    protected static String persistOnDemandAttributeKey = "__dot_session_persist_now__";
+
+    protected static boolean manualDirtyTrackingSupportEnabled = true;
+    protected static boolean persistOnDemandEnabled = true;
 
     /**
      * Activates a feature in the Redis-enabled Session Manager that allows developers to send a specific attribute to
@@ -38,8 +45,6 @@ public class RedisSession extends StandardSession {
         manualDirtyTrackingSupportEnabled = enabled;
     }
 
-    protected static String manualDirtyTrackingAttributeKey = "__changed__";
-
     /**
      * Allows you to customize name of the attribute used to let the plugin know that the session must be persisted to
      * Redis, no matter what.
@@ -50,8 +55,15 @@ public class RedisSession extends StandardSession {
         manualDirtyTrackingAttributeKey = key;
     }
 
-    protected HashMap<String, Object> changedAttributes;
-    protected boolean dirty = false;
+    /**
+     * Allows you to customize name of the attribute used to let the plugin know that the session must be persisted to
+     * Redis, no matter what.
+     *
+     * @param key The name of the flag attribute.
+     */
+    public static void setPersistOnDemandAttributeKey(final String key) {
+        persistOnDemandAttributeKey = key;
+    }
 
     public RedisSession(final Manager manager) {
         super(manager);
@@ -91,56 +103,79 @@ public class RedisSession extends StandardSession {
     }
 
     /**
-     * Binds an object to this session, using the specified name. If an object of the same name is already bound to this
-     * session, the object is replaced. When calling this method, the plugin will automatically save the session <b>ONLY
-     * when the following conditions are met</b>:
+     * Binds an object to this session, using the specified name. If an object of the same name is
+     * already bound to this session, the object is replaced. When calling this method, the plugin
+     * will automatically save the session <b>ONLY when the following conditions are met</b>:
      * <ol>
      *     <li>The {@code TOMCAT_REDIS_SESSION_PERSISTENT_POLICIES} contains the
      *     {@link RedisSessionManager.SessionPersistPolicy#SAVE_ON_CHANGE} policy in it.</li>
      *     <li>If it does, then at least one of the following criteria must be met:</li>
-     *     <li>Either the new value or the existing value of the added attribute <b>ARE NOT NULL</b>.</li>
+     *     <li>Either the new value or the existing value of the added attribute <b>ARE NOT
+     *     NULL</b>.</li>
      *     <li>The class of the new value compared to the existing value is different.</li>
      *     <li>The new value is actually different from the existing value.</li>
      * </ol>
      * <p>
-     * After this method executes, and if the object implements <code>HttpSessionBindingListener</code>, the container
-     * calls <code>valueBound()</code> on the object.
+     * After this method executes, and if the object implements
+     * <code>HttpSessionBindingListener</code>, the container calls <code>valueBound()</code> on the
+     * object.
      *
-     * @param key   Name to which the object is bound, cannot be null
-     * @param value Object to be bound. If it's {@code null}, it'll be removed from the session.
+     * @param key           Name to which the incoming value is bound.
+     * @param incomingValue Object to be bound. It must be serializable and not {@code null}. If it
+     *                      is {@code null}, then it'll be removed from the session.
      *
-     * @throws IllegalArgumentException if an attempt is made to add a non-serializable object in an environment marked
-     *                                  distributable.
+     * @throws IllegalArgumentException if an attempt is made to add a non-serializable object in an
+     *                                  environment marked distributable.
      * @throws IllegalStateException    if this method is called on an invalidated session.
      */
     @Override
-    public void setAttribute(final String key, final Object value) {
+    public void setAttribute(final String key, final Object incomingValue) {
         if (manualDirtyTrackingSupportEnabled && manualDirtyTrackingAttributeKey.equals(key)) {
+            log.info(String.format("Manual dirty tracking key '%s' was found. Marking session as dirty.", key));
             this.dirty = true;
             return;
         }
-        final Object oldValue = getAttribute(key);
-        if (value instanceof Serializable) {
-            super.setAttribute(key, value);
+        if (incomingValue instanceof Serializable) {
+            super.setAttribute(key, incomingValue);
         } else {
-            if (null != value) {
+            if (null != incomingValue) {
                 log.warn(String.format("Value of key '%s' is not serializable. Removing it from Session '%s'", key,
                         this.id));
+                super.setAttribute(key, null);
+                return;
             }
         }
-        if ((value != null || oldValue != null)
-                && (value == null && oldValue != null
-                || oldValue == null && value != null
-                || !value.getClass().isInstance(oldValue)
-                || !value.equals(oldValue))) {
-            if (this.manager instanceof RedisSessionManager && ((RedisSessionManager) this.manager).getSaveOnChange()) {
-                try {
-                    ((RedisSessionManager) this.manager).save(this, true);
-                } catch (final IOException ex) {
-                    log.error("Error saving session '" + this.id + "' on setAttribute (triggered by saveOnChange=true): " + ex.getMessage());
-                }
+        if (persistOnDemandEnabled && persistOnDemandAttributeKey.equals(key)) {
+            log.info(String.format("Persist-on-demand key '%s' was found. Saving session now.", key));
+            this.saveSession("persistOnDemand=true");
+            return;
+        }
+        final Object oldValue = getAttribute(key);
+        if ((incomingValue != null || oldValue != null)
+                && (incomingValue == null && oldValue != null
+                || oldValue == null && incomingValue != null
+                || !incomingValue.getClass().isInstance(oldValue)
+                || !incomingValue.equals(oldValue))) {
+            if (((RedisSessionManager) this.manager).getSaveOnChange()) {
+                this.saveSession("saveOnChange=true");
             } else {
-                this.changedAttributes.put(key, value);
+                this.changedAttributes.put(key, incomingValue);
+            }
+        }
+    }
+
+    /**
+     * Persists the current HTTP Session to Redis.
+     *
+     * @param triggeredBy A simple logging message for indicating what feature triggered this save.
+     */
+    private void saveSession(final String triggeredBy) {
+        if (this.manager instanceof RedisSessionManager) {
+            try {
+                ((RedisSessionManager) this.manager).save(this, true);
+            } catch (final IOException ex) {
+                log.error(String.format("Error persisting session '%s' on setAttribute (triggered by %s): " +
+                        "%s", this.id, triggeredBy, ex.getMessage()));
             }
         }
     }
@@ -178,7 +213,8 @@ public class RedisSession extends StandardSession {
             super.writeObjectData(out);
             out.writeLong(this.getCreationTime());
         } catch (final Exception e) {
-            log.error(e);
+            log.error(String.format("Failed to write object data from Session ID '%s': %s",
+                    this.getId(), e.getMessage()), e);
             throw e;
         }
     }
@@ -189,7 +225,8 @@ public class RedisSession extends StandardSession {
             super.readObjectData(in);
             this.setCreationTime(in.readLong());
         } catch (final Exception e) {
-            log.error(e);
+            log.error(String.format("Failed to read object data into Session ID '%s': %s",
+                    this.getId(), e.getMessage()), e);
             throw e;
         }
     }
