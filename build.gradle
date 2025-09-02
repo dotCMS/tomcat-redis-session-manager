@@ -7,7 +7,6 @@ buildscript {
 }
 
 apply plugin: 'java'
-apply plugin: 'maven'
 apply plugin: 'signing'
 apply plugin: 'maven-publish'
 
@@ -24,10 +23,10 @@ compileJava {
 }
 
 dependencies {
-    compile group: 'org.apache.tomcat', name: 'tomcat-catalina', version: '9.0.108'
+    implementation group: 'org.apache.tomcat', name: 'tomcat-catalina', version: '9.0.108'
     implementation 'redis.clients:jedis:4.4.6'
-    compile group: 'org.apache.commons', name: 'commons-pool2', version: '2.11.1'
-    testCompile group: 'org.apache.tomcat', name: 'tomcat-coyote', version: '9.0.108'
+    implementation group: 'org.apache.commons', name: 'commons-pool2', version: '2.11.1'
+    testImplementation group: 'org.apache.tomcat', name: 'tomcat-coyote', version: '9.0.108'
 }
 
 tasks.register('javadocJar', Jar) {
@@ -48,14 +47,14 @@ artifacts {
 }
 
 tasks.register('wrapper', Wrapper) {
-    gradleVersion = '4.10.2'
+    gradleVersion = '8.14'
 }
 
 tasks.withType(JavaCompile).configureEach {
     options.deprecation = true
 }
 
-// Maven configuration for JFrog
+// Maven publishing configuration for JFrog
 publishing {
     publications {
         mavenJava(MavenPublication) {
@@ -73,11 +72,20 @@ publishing {
 
     repositories {
         maven {
-            url 'https://repo.dotcms.com/artifactory'
+            url = uri('https://repo.dotcms.com/artifactory/libs-release-local')
             credentials {
                 username = System.getenv("DOTCMS_ARTIFACTORY_USERNAME")
                 password = System.getenv("DOTCMS_ARTIFACTORY_PASSWORD")
             }
         }
     }
+}
+
+// Custom alias task for JFrog publishing
+tasks.register("jfrogPublish") {
+    group = "publishing"
+    description = "Publishes artifacts to JFrog Artifactory"
+
+    // only publish the mavenJava publication to the defined repo
+    dependsOn "publishMavenJavaPublicationToMavenRepository"
 }
