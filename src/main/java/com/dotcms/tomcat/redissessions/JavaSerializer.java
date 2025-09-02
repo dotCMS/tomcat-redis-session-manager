@@ -45,13 +45,14 @@ public class JavaSerializer implements Serializer {
             oos.flush();
             serialized = bos.toByteArray();
         }
-        MessageDigest digester = null;
         try {
-            digester = MessageDigest.getInstance("MD5");
+            final MessageDigest digester = MessageDigest.getInstance("MD5");
+            return digester.digest(serialized);
         } catch (final NoSuchAlgorithmException e) {
-            log.error("Unable to get MessageDigest instance for MD5 for session ID " + session.getId());
+            log.error(String.format("Unable to get MessageDigest instance for MD5 for session ID " +
+                    "'%s'. Returning an empty byte array", session.getId()));
+            return new byte[0];
         }
-        return digester.digest(serialized);
     }
 
     @Override

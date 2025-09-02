@@ -1,10 +1,9 @@
 package com.dotcms.tomcat.util;
 
 /**
- * Utility class that provides useful methods to access configuration properties for this plugin. If a property needs to
- * be added, removed or have its default value updated, make sure that the
- * {@code docker/dotcms/ROOT/srv/00-config-defaults.sh} file in the dotCMS Core repository is updated accordingly. This
- * way, such changes will be available as environment variables configurable in a Docker instance.
+ * Utility class that provides useful methods to access configuration properties for this plugin.
+ * These properties will be available as environment variables that can be set in the
+ * {@code docker-compose.yml} file.
  *
  * @author Jose Castro
  * @since May 3rd, 2023
@@ -20,10 +19,15 @@ public class ConfigUtil {
     public static final String REDIS_SENTINELS_PROPERTY = "${TOMCAT_REDIS_SESSION_SENTINELS}";
     public static final String REDIS_DATABASE_PROPERTY = "${TOMCAT_REDIS_SESSION_DATABASE}";
     public static final String REDIS_TIMEOUT_PROPERTY = "${TOMCAT_REDIS_SESSION_TIMEOUT}";
+    public static final String REDIS_USER_SESSION_TIMEOUT_PROPERTY = "${TOMCAT_REDIS_USER_SESSION_TIMEOUT}";
     public static final String REDIS_MAX_CONNECTIONS_PROPERTY = "${TOMCAT_REDIS_MAX_CONNECTIONS}";
     public static final String REDIS_MAX_IDLE_CONNECTIONS_PROPERTY = "${TOMCAT_REDIS_MAX_IDLE_CONNECTIONS";
     public static final String REDIS_MIN_IDLE_CONNECTIONS_PROPERTY = "${TOMCAT_REDIS_MIN_IDLE_CONNECTIONS";
     public static final String REDIS_PERSISTENT_POLICIES_PROPERTY = "${TOMCAT_REDIS_SESSION_PERSISTENT_POLICIES}";
+    public static final String REDIS_MANUAL_DIRTY_TRACKING_SUPPORT_PROPERTY = "${TOMCAT_REDIS_MANUAL_DIRTY_TRACKING_SUPPORT}";
+    public static final String REDIS_MANUAL_DIRTY_TRACKING_SUPPORT_ATTR_PROPERTY = "${TOMCAT_REDIS_MANUAL_DIRTY_TRACKING_SUPPORT_ATTR}";
+    public static final String REDIS_PERSIST_ON_DEMAND_PROPERTY = "${TOMCAT_REDIS_PERSIST_ON_DEMAND}";
+    public static final String REDIS_PERSIST_ON_DEMAND_ATTR_PROPERTY = "${TOMCAT_REDIS_PERSIST_ON_DEMAND_ATTR}";
     public static final String REDIS_ENABLED_FOR_ANON_TRAFFIC = "${TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC}";
     public static final String REDIS_UNDEFINED_SESSION_TYPE_TIMEOUT = "${TOMCAT_REDIS_UNDEFINED_SESSION_TYPE_TIMEOUT}";
     public static final String DOTCMS_CLUSTER_ID_PROPERTY = "${DOT_DOTCMS_CLUSTER_ID}";
