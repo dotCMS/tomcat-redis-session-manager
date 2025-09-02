@@ -1,4 +1,4 @@
-name: 'Publish JAR to Artifactory'
+name: 'Publishing JAR to JFrog Repository'
 
 on:
   workflow_dispatch:
@@ -23,5 +23,5 @@ jobs:
         uses: actions/checkout@v3
       - name: Compiling code with Gradle Wrapper
         run: ./gradlew clean jar
-      - name: Uploading JAR to Artifactory
-        run: ./gradlew artifactoryPublish
+      - name: Uploading JAR to JFrog Repository
+        run: ./gradlew jfrogPublish --info
