@@ -231,4 +231,157 @@ public class RedisSession extends StandardSession {
         }
     }
 
+    /**
+     * Returns the valid flag from the base class without triggering expiration checks.
+     * This is used internally by the overridden {@link #isValid()} method for Redis-managed sessions.
+     *
+     * @return {@code true} if the session is marked as valid, {@code false} otherwise
+     */
+    protected boolean getValidFlag() {
+        return this.isValid;
+    }
+
+    /**
+     * Returns the last accessed time for this session, calculated from Redis TTL.
+     *
+     * <p><b>How It Works</b>:</p>
+     * <ul>
+     *     <li>Queries Redis for remaining TTL on the session key</li>
+     *     <li>Determines the original Redis TTL based on session type:
+     *         <ul>
+     *             <li>Undefined sessions: uses undefinedSessionTypeTimeout (15s)</li>
+     *             <li>Authenticated sessions: uses maxInactiveInterval (1800s)</li>
+     *         </ul>
+     *     </li>
+     *     <li>Calculates: lastAccessedTime = currentTime - (originalTTL - remainingTTL)</li>
+     *     <li>Compares with stored lastAccessedTime from base class</li>
+     *     <li>Returns the most recent (max) to ensure accuracy</li>
+     * </ul>
+     *
+     * <p><b>Why This Works for All Session Types</b>:</p>
+     * <ul>
+     *     <li><b>Tomcat-managed sessions (undefined)</b>: maxInactiveInterval = Tomcat's default session timeout
+     *     (typically 1800s or as configured in web.xml). Redis stores with short TTL (15s) for cluster
+     *     coordination only.</li>
+     *     <li><b>Redis-managed sessions (authenticated)</b>: maxInactiveInterval = userSessionTimeout (1800s),
+     *     synchronized with Redis TTL for cluster-consistent expiration.</li>
+     *     <li>TTL calculation works the same way for both types</li>
+     * </ul>
+     *
+     * <p><b>Why Return Max(calculated, stored)</b>:</p>
+     * <ul>
+     *     <li>If TTL-based calculation is more recent → use it (handles stale stored value)</li>
+     *     <li>If stored value is more recent → use it (handles edge cases in TTL calculation)</li>
+     *     <li>Always returns the most up-to-date last access time</li>
+     *     <li>Robust against both stale serialization and TTL edge cases</li>
+     * </ul>
+     *
+     * <p><b>Stale Timestamp Problem</b>:</p>
+     * <p>When a session is saved to and loaded from Redis multiple times, the stored
+     * lastAccessedTime becomes stale. Redis TTL is refreshed on every access, making it
+     * the accurate source of truth. By calculating from TTL and comparing with stored value,
+     * we ensure the most accurate timing information.</p>
+     *
+     * @return The time this session was last accessed, in milliseconds since epoch (most recent value)
+     */
+    @Override
+    public long getLastAccessedTime() {
+        // Check validity first
+        if (!getValidFlag()) {
+            throw new IllegalStateException(
+                    sm.getString("standardSession.getLastAccessedTime.ise"));
+        }
+
+        if (this.manager instanceof RedisSessionManager) {
+            final RedisSessionManager redisManager = (RedisSessionManager) this.manager;
+
+            try {
+                final long remainingTTL = redisManager.getRemainingTTL(this.getId());
+
+                if (remainingTTL >= 0) {
+                    // Determine the original TTL that was set in Redis (not maxInactiveInterval!)
+                    // For undefined sessions: Redis TTL = undefinedSessionTypeTimeout (15s)
+                    // For authenticated sessions: Redis TTL = userSessionTimeout (1800s)
+                    final long originalTTL;
+                    if (this.getAttribute(DOT_CLUSTER_SESSION_ATTR) != null || redisManager.isAnonTrafficEnabled()) {
+                        // Authenticated session: Redis TTL matches maxInactiveInterval
+                        originalTTL = this.getMaxInactiveInterval();
+                    } else {
+                        // Undefined session: Redis TTL is the short timeout (not maxInactiveInterval)
+                        originalTTL = redisManager.getUndefinedSessionTypeTimeout();
+                    }
+                    final long timeSinceLastAccess = (originalTTL - remainingTTL) * 1000L;
+                    final long currentTime = System.currentTimeMillis();
+                    final long calculatedLastAccessedTime = currentTime - timeSinceLastAccess;
+
+                    // Get stored lastAccessedTime from base class (safe now - we checked validity)
+                    final long storedLastAccessedTime = super.getLastAccessedTime();
+
+                    // Return the most recent (max) to ensure we have the most up-to-date value
+                    // This handles both stale stored values and edge cases in TTL calculation
+                    return Math.max(calculatedLastAccessedTime, storedLastAccessedTime);
+                }
+            } catch (Exception e) {
+                // Fall back to stored value if Redis is unavailable
+                log.warn(String.format("Error getting remaining TTL for session [ %s ]. " +
+                        "Falling back to stored lastAccessedTime: %s", this.getId(), e.getMessage()));
+            }
+        }
+
+        // Fallback: Use stored lastAccessedTime (safe - we checked validity above)
+        return super.getLastAccessedTime();
+    }
+
+    /**
+     * Checks if the session is valid, with different behavior based on session type:
+     *
+     * <p><b>For Redis-managed sessions</b> (sessions with DOT_CLUSTER_SESSION_ATTR or when
+     * TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC = true):</p>
+     * <ul>
+     *     <li>Only checks the session's valid flag</li>
+     *     <li>DOES NOT check lastAccessedTime or maxInactiveInterval</li>
+     *     <li>Expiration is managed by Redis TTL, not Tomcat idle time</li>
+     * </ul>
+     *
+     * <p><b>For Tomcat-managed sessions</b> (undefined sessions without DOT_CLUSTER_SESSION_ATTR
+     * when TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC = false):</p>
+     * <ul>
+     *     <li>Delegates to base class {@code super.isValid()}</li>
+     *     <li>Includes idle time expiration checks (lastAccessedTime + maxInactiveInterval)</li>
+     *     <li>Base class will automatically call {@code expire()} if session is expired</li>
+     * </ul>
+     *
+     * <p>This separation ensures that Redis-managed sessions are not prematurely expired by
+     * Tomcat's local expiration logic, which would cause inconsistent expiration across cluster
+     * nodes.</p>
+     *
+     * @return {@code true} if the session is valid, {@code false} otherwise
+     */
+    @Override
+    public boolean isValid() {
+        // Check valid flag FIRST before accessing attributes
+        if (!getValidFlag()) {
+            return false;
+        }
+
+        if (this.manager instanceof RedisSessionManager) {
+            final RedisSessionManager redisManager = (RedisSessionManager) this.manager;
+
+            // Now safe to check attributes since we know session is valid
+            // Check if this is a Redis-managed session
+            final boolean isRedisManagedSession =
+                    this.getAttribute(DOT_CLUSTER_SESSION_ATTR) != null
+                    || redisManager.isAnonTrafficEnabled();
+
+            if (isRedisManagedSession) {
+                // Redis-managed: Only check valid flag, skip idle time checks
+                // Expiration is managed by Redis TTL
+                return true;  // Already checked valid flag above
+            }
+        }
+
+        // Tomcat-managed: Delegate to base class which includes idle time expiration
+        return super.isValid();
+    }
+
 }

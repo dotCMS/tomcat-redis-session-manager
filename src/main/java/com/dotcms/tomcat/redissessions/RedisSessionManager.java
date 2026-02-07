@@ -282,24 +282,61 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
     }
 
     /**
-     * Specifies the TTL (time-to-live) for the Sessions that may not be associated with an authenticated request. This
-     * is extremely important to take into consideration in dotCMS clustered environments.
-     * <p>When a login request goes to dotCMS, after our APIs have authorized the User, the
-     * {@link RedisSession#DOT_CLUSTER_SESSION_ATTR} attribute is added to the session. This causes the plugin to persist it
-     * to Redis as it is effectively a back-end session. Subsequent -- or almost parallel -- requests are also initiated
-     * when such an authentication process happens. However, in multi-node instances, for instance, the main
-     * authentication request may have gone to node #1, but some of those subsequent requests may try to retrieve the
-     * session from node #2, where it doesn't exist. This causes different requests to create several invalid sessions
-     * that cause errors in the application.</p>
-     * <p>In order to prevent that, every initial session -- which MAY or MAY NOT be associated to a back-end/front-end
-     * login -- needs to be persisted to Redis first, ate least for a few seconds, so it can be used by the other nodes
-     * in the cluster and handle the requests appropriately.</p>
+     * Returns whether anonymous traffic is enabled for Redis session management.
      *
-     * @param undefinedSessionTypeTimeout The time in seconds before the Redis entry representing the session gets
-     *                                    evicted.
+     * @return {@code true} if all sessions (including anonymous) are managed by Redis, {@code false} if only authenticated sessions use Redis expiration.
+     */
+    public boolean isAnonTrafficEnabled() {
+        return this.isAnonTrafficEnabled;
+    }
+
+    /**
+     * Specifies the Redis TTL (time-to-live) in seconds for undefined sessions (sessions without
+     * the {@link RedisSession#DOT_CLUSTER_SESSION_ATTR} attribute). This setting is critical for
+     * preventing race conditions in clustered environments during authentication.
+     * <p><b>Purpose:</b> When a user first accesses the application (before authentication), a session
+     * is created without the {@code DOT_CLUSTER_SESSION_ATTR} attribute. In clustered environments,
+     * parallel requests during authentication may arrive at different nodes. Storing these new sessions
+     * in Redis temporarily allows all nodes to see the same session and prevents duplicate session creation.</p>
+     * <p><b>Dual Storage Behavior (when TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC = false, default):</b></p>
+     * <ul>
+     *     <li><b>Undefined sessions (no DOT_CLUSTER_SESSION_ATTR):</b>
+     *         <ul>
+     *             <li>Stored in Red and Tomcat with TTL = {@code undefinedSessionTypeTimeout} (default 15s)</li>
+     *             <li>After Redis TTL expires, entry auto-deleted from Redis</li>
+     *             <li>Tomcat's {@code processExpires()} manages actual session expiration based on {@code lastAccessedTime}</li>
+     *         </ul>
+     *     </li>
+     *     <li><b>When authenticated (DOT_CLUSTER_SESSION_ATTR is set):</b>
+     *         <ul>
+     *             <li>Redis TTL updated to {@code userSessionTimeout} (default 1800s)</li>
+     *             <li>Remains in both Redis and Tomcat</li>
+     *             <li>Redis TTL manages expiration (cluster-consistent)</li>
+     *             <li>Tomcat's {@code processExpires()} skips these sessions</li>
+     *         </ul>
+     *     </li>
+     * </ul>
+     * <p><b>Note:</b> When {@code TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC = true}, this parameter is not used
+     * for undefined sessions as all sessions (including anonymous) use {@code userSessionTimeout} instead.</p>
+     * <p><b>Default:</b> 15 seconds - long enough to handle authentication flows but short enough to
+     * quickly clean Redis of anonymous sessions that will be managed locally by Tomcat.</p>
+     *
+     * @param undefinedSessionTypeTimeout The Redis TTL in seconds for undefined sessions. After this time,
+     *                                    the session is auto-deleted from Redis but continues to exist in
+     *                                    Tomcat for local expiration management (when
+     *                                    TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC = false).
      */
     public void setUndefinedSessionTypeTimeout(final int undefinedSessionTypeTimeout) {
         this.undefinedSessionTypeTimeout = undefinedSessionTypeTimeout;
+    }
+
+    /**
+     * Returns the Redis TTL (time-to-live) in seconds for undefined sessions.
+     *
+     * @return The TTL in seconds for undefined sessions.
+     */
+    public int getUndefinedSessionTypeTimeout() {
+        return this.undefinedSessionTypeTimeout;
     }
 
     @Override
@@ -396,7 +433,11 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
             session.setNew(true);
             session.setValid(true);
             session.setCreationTime(System.currentTimeMillis());
-            session.setMaxInactiveInterval(this.userSessionTimeout);
+            // Set maxInactiveInterval to Tomcat's default timeout
+            // This is appropriate for undefined (Tomcat-managed) sessions
+            // For authenticated sessions, this will be updated to userSessionTimeout
+            // when setSessionExpiration() is called during save()
+            session.setMaxInactiveInterval(this.getTomcatSessionTimeoutInSeconds());
             session.setId(sessionId);
             session.tellNew();
         }
@@ -423,8 +464,12 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
      */
     private boolean isSessionPersistable(final Session session) {
         boolean persistable = false;
-        if (null != session && null != ((RedisSession) session).getAttribute(RedisSession.DOT_CLUSTER_SESSION_ATTR)) {
-            persistable = (boolean) ((RedisSession) session).getAttribute(RedisSession.DOT_CLUSTER_SESSION_ATTR);
+        // Check session is valid before accessing attributes
+        if (null != session && session.isValid()) {
+            final Object attrValue = ((RedisSession) session).getAttribute(RedisSession.DOT_CLUSTER_SESSION_ATTR);
+            if (null != attrValue) {
+                persistable = (boolean) attrValue;
+            }
         }
         return persistable || this.isAnonTrafficEnabled;
     }
@@ -450,14 +495,28 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
         return new RedisSession(this);
     }
 
+    /**
+     * Adds a newly created session to both Redis and Tomcat's session manager (dual storage).
+     * <p>All new sessions are saved to Redis with an appropriate TTL and added to Tomcat's local
+     * session manager via {@link #save(Session)}, which calls {@link #setSessionExpiration(Session, long)}.</p>
+     * <p><b>TTL Assignment (when TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC = false, default):</b></p>
+     * <ul>
+     *     <li><b>Without DOT_CLUSTER_SESSION_ATTR:</b> Redis TTL = {@code undefinedSessionTypeTimeout}
+     *     (default 15s). Used for cluster coordination during authentication. Tomcat manages expiration
+     *     via {@code processExpires()}.</li>
+     *     <li><b>With DOT_CLUSTER_SESSION_ATTR:</b> Redis TTL = {@code userSessionTimeout} (default 1800s).
+     *     Redis manages expiration for cluster-consistent behavior.</li>
+     * </ul>
+     * <p><b>When TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC = true:</b> All sessions use {@code userSessionTimeout}
+     * and Redis manages expiration.</p>
+     *
+     * @param session The session to add.
+     * @throws RuntimeException if an error occurs while saving the session to Redis.
+     */
     @Override
     public void add(final Session session) {
         try {
-            if (this.isSessionPersistable(session)) {
-                this.save(session);
-            } else {
-                super.add(session);
-            }
+            this.save(session);
         } catch (final IOException ex) {
             final String errorMsg = String.format("Unable to add session [ %s ] to Redis: %s" ,session, ex.getMessage());
             log.error(errorMsg);
@@ -465,6 +524,34 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
         }
     }
 
+    /**
+     * Finds a session by ID using a multi-tier lookup strategy with stale session detection.
+     * <p><b>Lookup Order:</b></p>
+     * <ol>
+     *     <li><b>ThreadLocal:</b> Check if this is the current request's session (fastest)</li>
+     *     <li><b>Redis:</b> Deserialize from Redis if found</li>
+     *     <li><b>Tomcat:</b> Check Tomcat's local session manager if not in Redis</li>
+     *     <li><b>Not found:</b> Return null</li>
+     * </ol>
+     * <p><b>Stale Session Detection:</b></p>
+     * <p>When a session is found in Tomcat but NOT in Redis, this method checks if it should have
+     * been in Redis:</p>
+     * <ul>
+     *     <li><b>Has DOT_CLUSTER_SESSION_ATTR:</b> This is an authenticated session that SHOULD be
+     *     in Redis. Not being in Redis means it expired there (TTL reached). The method expires
+     *     the Tomcat copy and returns {@code null} to maintain consistency.</li>
+     *     <li><b>No DOT_CLUSTER_SESSION_ATTR (when TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC = false):</b>
+     *     This is an undefined session managed by Tomcat. Redis TTL expired (15s), but session continues
+     *     in Tomcat - normal case, return the session.</li>
+     * </ul>
+     * <p><b>Note:</b> When {@code TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC = true}, all sessions should
+     * be in Redis, so finding a session only in Tomcat would trigger stale session detection regardless
+     * of the attribute.</p>
+     *
+     * @param id The session identifier.
+     * @return The session if found and valid, or {@code null} if not found or stale.
+     * @throws IOException If an error occurs deserializing the session from Redis.
+     */
     @Override
     public Session findSession(final String id) throws IOException {
         RedisSession session = null;
@@ -487,12 +574,43 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
                 currentSessionIsPersisted.set(true);
                 currentSessionId.set(id);
             } else if (null != super.findSession(id)) {
-                log.debug(String.format("Session [ %s ] was found in Tomcat", id));
+                // Session found in Tomcat but not in Redis
+                log.debug(String.format("Session [ %s ] was found in Tomcat but not in Redis", id));
                 session = (RedisSession) super.findSession(id);
-                currentSession.set(session);
-                currentSessionId.set(id);
-                currentSessionIsPersisted.set(false);
-                currentSessionSerializationMetadata.set(new SessionSerializationMetadata());
+
+                // Check if the session is still valid before accessing attributes
+                if (!session.isValid()) {
+                    log.debug(String.format("Session [ %s ] found in Tomcat is already invalid. Returning null.", id));
+                    session = null;
+                    currentSessionIsPersisted.set(false);
+                    currentSession.remove();
+                    currentSessionSerializationMetadata.remove();
+                    currentSessionId.remove();
+                } else if (session.getAttribute(RedisSession.DOT_CLUSTER_SESSION_ATTR) != null) {
+                    // This is an authenticated session that SHOULD be in Redis but isn't
+                    // This means it was invalidated/expired in Redis (TTL expired or explicitly deleted)
+                    // We should expire it in Tomcat as well to maintain consistency
+                    log.debug(String.format("Session [ %s ] has DOT_CLUSTER_SESSION_ATTR but is not in Redis. " +
+                            "Assuming it was invalidated in Redis. Expiring session in Tomcat.", id));
+                    try {
+                        session.expire();
+                    } catch (Exception e) {
+                        log.error(String.format("Error expiring stale session [ %s ]: %s", id, e.getMessage()));
+                    }
+                    // Return null to indicate session is gone
+                    session = null;
+                    currentSessionIsPersisted.set(false);
+                    currentSession.remove();
+                    currentSessionSerializationMetadata.remove();
+                    currentSessionId.remove();
+                } else {
+                    // This is an undefined/anonymous session managed by Tomcat - normal case
+                    log.debug(String.format("Session [ %s ] is a Tomcat-managed session (no DOT_CLUSTER_SESSION_ATTR)", id));
+                    currentSession.set(session);
+                    currentSessionId.set(id);
+                    currentSessionIsPersisted.set(false);
+                    currentSessionSerializationMetadata.set(new SessionSerializationMetadata());
+                }
             } else {
                 currentSessionIsPersisted.set(false);
                 currentSession.remove();
@@ -526,9 +644,16 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
             this.serializer.deserializeInto(data, session, metadata);
             session.setId(id);
             session.setNew(false);
-            session.setMaxInactiveInterval(this.userSessionTimeout);
-            session.access();
             session.setValid(true);
+            // Update maxInactiveInterval based on session type:
+            // - For authenticated sessions (Redis-managed): set to userSessionTimeout
+            // - For undefined sessions (Tomcat-managed): keep Tomcat's default, don't override
+            // This ensures authenticated sessions use the configured timeout while undefined
+            // sessions continue using Tomcat's original inactive interval
+            if (session.getAttribute(RedisSession.DOT_CLUSTER_SESSION_ATTR) != null || this.isAnonTrafficEnabled) {
+                session.setMaxInactiveInterval(this.userSessionTimeout);
+            }
+            // For undefined sessions, don't set maxInactiveInterval - keep Tomcat's default
             session.resetDirtyTracking();
             if (log.isTraceEnabled()) {
                 log.trace(String.format("Contents from Session [ %s ]: ", id));
@@ -570,17 +695,36 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
     }
 
     /**
-     * Saves the specified Session object to Redis. There are four scenarios under which the Session
-     * must be persisted to Redis:
+     * Saves the specified Session object to Redis and adds it to Tomcat's session manager.
+     * <p>The session data is persisted to Redis when any of the following conditions are met:</p>
      * <ol>
      *     <li>The {@code forceSave} parameter is set to {@code true}.</li>
      *     <li>The Session is dirty. That is, attributes were added and/or removed.</li>
-     *     <li>The {@link ThreadLocal} variable that stores the persisted Session object is empty
-     *     .</li>
+     *     <li>The {@link ThreadLocal} variable that stores the persisted Session object is empty.</li>
      *     <li>The value of the {@link SessionSerializationMetadata} object contained in the
-     *     {@link ThreadLocal}
-     *     variable is different from the one in the specified {@code session} parameter.</li>
+     *     {@link ThreadLocal} variable is different from the one in the specified {@code session} parameter.</li>
      * </ol>
+     * <p><b>Dual Storage Strategy:</b></p>
+     * <p>All sessions are stored in both Redis and Tomcat's session manager. The {@code DOT_CLUSTER_SESSION_ATTR}
+     * attribute and {@code TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC} configuration determine the expiration mechanism:</p>
+     * <ul>
+     *     <li><b>When TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC = false (default):</b>
+     *         <ul>
+     *             <li><b>Without DOT_CLUSTER_SESSION_ATTR (undefined/anonymous sessions):</b> Redis stores with
+     *             short TTL ({@code undefinedSessionTypeTimeout}, default 15s) for cluster coordination.
+     *             Tomcat's {@code processExpires()} manages actual expiration based on {@code lastAccessedTime}.</li>
+     *             <li><b>With DOT_CLUSTER_SESSION_ATTR (authenticated sessions):</b> Redis stores with full TTL
+     *             ({@code userSessionTimeout}, default 1800s). Redis TTL manages expiration to ensure consistency
+     *             across cluster nodes. Tomcat's {@code processExpires()} skips these sessions.</li>
+     *         </ul>
+     *     </li>
+     *     <li><b>When TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC = true:</b> All sessions (including anonymous) use full
+     *     TTL ({@code userSessionTimeout}) and Redis manages expiration. Tomcat's {@code processExpires()}
+     *     only checks for sessions that expired in Redis but remain in Tomcat.</li>
+     * </ul>
+     * <p>This approach ensures authenticated sessions are clustered and expire consistently across nodes,
+     * while undefined sessions use Redis temporarily for cluster coordination and then rely on local
+     * Tomcat expiration (when TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC = false).</p>
      *
      * @param session   The current {@link Session}.
      * @param forceSave If the specified Session object MUST be saved no matter what, set this to
@@ -624,13 +768,16 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
             } else {
                 log.debug(String.format("Save on Session [ %s ] was NOT necessary", sessionId));
             }
+            // Set Redis TTL based on session type
             if (null == ((RedisSession) session).getAttribute(RedisSession.DOT_CLUSTER_SESSION_ATTR) && !this.isAnonTrafficEnabled) {
-                log.debug(String.format("Session [ %s ] doesn't seem to belong to a back-end request. Setting expiration time to " +
-                        "%d seconds", sessionId, this.undefinedSessionTypeTimeout));
+                // Undefined session (no authentication): short TTL in Redis, will be expired by Tomcat
+                log.debug(String.format("Session [ %s ] is undefined. Setting Redis TTL to %d seconds. " +
+                        "Session expiration will be managed by Tomcat.", sessionId, this.undefinedSessionTypeTimeout));
                 this.setSessionExpiration(session, this.undefinedSessionTypeTimeout);
-                super.add(session);
             } else {
-                log.debug(String.format("Setting expire timeout on session [ %s ] to %d seconds", sessionId, this.userSessionTimeout));
+                // Authenticated session or anonymous traffic enabled: full TTL, Redis manages expiration
+                log.debug(String.format("Session [ %s ] is persistable. Setting Redis TTL to %d seconds. " +
+                        "Session expiration will be managed by Redis.", sessionId, this.userSessionTimeout));
                 this.setSessionExpiration(session, this.userSessionTimeout);
             }
         } catch (final IOException e) {
@@ -641,18 +788,46 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
     }
 
     /**
-     * Sets the expiration time for the newly created Session, as this process will be completely
-     * handled by Redis.
+     * Sets the expiration time for a session in both Redis and Tomcat's session manager.
+     * <p>All sessions are stored in both Redis (for cluster coordination) and Tomcat's local
+     * manager (for expiration processing). The {@code DOT_CLUSTER_SESSION_ATTR} attribute
+     * and {@code TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC} configuration determine which system manages expiration:</p>
+     * <ul>
+     *     <li><b>When TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC = false (default):</b>
+     *         <ul>
+     *             <li><b>Without DOT_CLUSTER_SESSION_ATTR (undefined sessions):</b> Short Redis TTL (15s, auto-expires in Redis),
+     *             Tomcat's processExpires() handles actual expiration using Tomcat's default maxInactiveInterval.
+     *             The session's maxInactiveInterval is NOT changed - it keeps using Tomcat's original timeout.</li>
+     *             <li><b>With DOT_CLUSTER_SESSION_ATTR (authenticated sessions):</b> Full Redis TTL (1800s, Redis manages expiration),
+     *             session's maxInactiveInterval is set to match Redis TTL. Tomcat's processExpires() only checks for stale sessions.</li>
+     *         </ul>
+     *     </li>
+     *     <li><b>When TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC = true:</b> All sessions use full Redis TTL (1800s)
+     *     and Redis manages expiration. Session's maxInactiveInterval is set to match Redis TTL.
+     *     Tomcat's processExpires() only checks for stale sessions.</li>
+     * </ul>
      * <p>If the value for the {@code DOT_DOTCMS_CLUSTER_ID} is specified, it'll be used to prefix
-     * they key. Doing this will allow multiple clusters to share the same Session Redis Store.</p>
+     * the Redis key, allowing multiple clusters to share the same Redis instance.</p>
      *
      * @param session The {@link Session} object whose TTL is being set.
-     * @param seconds The number of seconds after which the Session will expire.
+     * @param seconds The number of seconds after which the Session will expire in Redis.
      */
     protected void setSessionExpiration(final Session session, final long seconds) {
         final String prefixedKey = this.prefix + session.getId();
+
+        // Always set Redis TTL
         this.jedisPool.expire(prefixedKey.getBytes(), seconds);
-        session.setMaxInactiveInterval((int) seconds);
+
+        // Only set maxInactiveInterval for authenticated sessions (Redis-managed)
+        // For undefined sessions (Tomcat-managed), keep Tomcat's original maxInactiveInterval
+        final RedisSession redisSession = (RedisSession) session;
+        if (redisSession.getAttribute(RedisSession.DOT_CLUSTER_SESSION_ATTR) != null || this.isAnonTrafficEnabled) {
+            // Authenticated session: synchronize maxInactiveInterval with Redis TTL
+            session.setMaxInactiveInterval((int) seconds);
+        }
+        // For undefined sessions, don't modify maxInactiveInterval - keep Tomcat's default timeout
+
+        // Add to Tomcat's session manager for local tracking and expiration processing
         super.add(session);
     }
 
@@ -674,6 +849,14 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
      * This method is called by the {@link RedisSessionHandlerValve} after any HTTP Request has been processed. It
      * takes care of saving the current Session -- if it's still valid -- or removing it in case it is not. It also
      * differentiates "non-persistable" sessions from "persistable" ones, and handles them accordingly.
+     * <p>For valid sessions, this method:</p>
+     * <ul>
+     *     <li>Saves the session to Redis (if dirty or based on persistence policy)</li>
+     *     <li>Refreshes the Redis TTL (happens always via setSessionExpiration())</li>
+     * </ul>
+     * <p>Note: Session lifecycle methods like {@code access()} and {@code endAccess()} are handled by
+     * Tomcat's request processing infrastructure (CoyoteAdapter.service() → Request.recycle() →
+     * Request.recycleSessionInfo()), not by this method.</p>
      */
     public void afterRequest() {
         final RedisSession redisSession = this.currentSession.get();
@@ -684,6 +867,7 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
         try {
             if (redisSession.isValid()) {
                 log.debug(String.format("Request has finished. Saving session [ %s ]", sessionId));
+                // Save session to Redis (also refreshes TTL via setSessionExpiration())
                 this.save(redisSession, this.getAlwaysSaveAfterRequest());
             } else {
                 if (!this.isSessionPersistable(redisSession)) {
@@ -705,13 +889,93 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
     }
 
     /**
-     * If anonymous sessions are NOT allowed into Redis -- i.e., are handled in memory by Tomcat -- then we need to
-     * check and invalidate all front-end sessions that have expired, which is the default behavior.
+     * Processes session expiration handling two distinct cases:
+     * <p><b>Case 1: Undefined/Anonymous Sessions (no DOT_CLUSTER_SESSION_ATTR):</b></p>
+     * <ul>
+     *     <li>When {@code TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC = false}, these sessions are managed by Tomcat</li>
+     *     <li>Expired based on {@code lastAccessedTime} and {@code maxInactiveInterval}</li>
+     *     <li>Redis stores with short TTL (15s) for cluster coordination only</li>
+     * </ul>
+     * <p><b>Case 2: Authenticated Sessions (has DOT_CLUSTER_SESSION_ATTR) or All Sessions
+     * (when TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC = true):</b></p>
+     * <ul>
+     *     <li>These sessions are managed by Redis TTL for cluster-consistent expiration</li>
+     *     <li>This method checks if session exists in Redis using {@link #existsInRedis(String)}</li>
+     *     <li>If session is in Tomcat but NOT in Redis → Redis TTL expired → expire in Tomcat</li>
+     *     <li>This prevents memory leaks where sessions remain in Tomcat after Redis cleanup</li>
+     * </ul>
      */
     @Override
     public void processExpires() {
-        if (!this.isAnonTrafficEnabled) {
-            super.processExpires();
+        long timeNow = System.currentTimeMillis();
+        Session[] sessions = findSessions();
+        int expireHere = 0;
+
+        if (log.isDebugEnabled()) {
+            log.debug("Start expire sessions at " + timeNow + " sessioncount " + sessions.length);
+        }
+
+        for (Session session : sessions) {
+            if (session instanceof RedisSession) {
+                RedisSession redisSession = (RedisSession) session;
+
+                // Check valid flag before accessing attributes to prevent IllegalStateException
+                if (!redisSession.isValid()) {
+                    // Session already invalid, skip it
+                    continue;
+                }
+
+                if (redisSession.getAttribute(RedisSession.DOT_CLUSTER_SESSION_ATTR) == null
+                        && !this.isAnonTrafficEnabled) {
+                    // Case 1: Undefined session (Tomcat-managed expiration)
+                    // Check expiration using real lastAccessedTime calculated from Redis TTL
+                    if (!redisSession.isNew()) {
+                        try {
+                            // Get the real lastAccessedTime (calculated from Redis TTL)
+                            final long lastAccessedTime = redisSession.getLastAccessedTime();
+                            final int maxInactiveInterval = redisSession.getMaxInactiveInterval();
+
+                            // Calculate idle time
+                            final long timeIdle = (timeNow - lastAccessedTime) / 1000L;
+
+                            // Check if session has exceeded maxInactiveInterval
+                            // Note: validFlag already checked at line 906, so session is valid here
+                            if (maxInactiveInterval > 0 && timeIdle >= maxInactiveInterval) {
+                                expireHere++;
+                                if (log.isDebugEnabled()) {
+                                    log.debug(String.format("Session [ %s ] expired by Tomcat. Idle time: %d seconds, Max inactive: %d seconds",
+                                            redisSession.getId(), timeIdle, maxInactiveInterval));
+                                }
+                                redisSession.expire();
+                            }
+                        } catch (Throwable t) {
+                            log.error(String.format("Error expiring session [ %s ]: %s", redisSession.getId(), t.getMessage()));
+                        }
+                    }
+                } else {
+                    // Case 2: Authenticated session (Redis-managed) or all sessions when isAnonTrafficEnabled = true
+                    // Check if session still exists in Redis
+                    try {
+                        if (!existsInRedis(redisSession.getId())) {
+                            // Redis TTL expired, but session still in Tomcat → memory leak
+                            // Expire it in Tomcat to clean up
+                            expireHere++;
+                            if (log.isDebugEnabled()) {
+                                log.debug(String.format("Session [ %s ] expired in Redis (TTL reached) but still in Tomcat. " +
+                                        "Expiring in Tomcat to prevent memory leak.", redisSession.getId()));
+                            }
+                            redisSession.expire();
+                        }
+                    } catch (Throwable t) {
+                        log.error(String.format("Error checking/expiring Redis-managed session [ %s ]: %s",
+                                redisSession.getId(), t.getMessage()));
+                    }
+                }
+            }
+        }
+
+        if (log.isDebugEnabled()) {
+            log.debug("End expire sessions processing. Expired sessions: " + expireHere);
         }
     }
 
@@ -892,6 +1156,39 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
     protected byte[] getRedisEntry(final String key) {
         final String prefixedKey = this.prefix + key;
         return this.jedisPool.get(prefixedKey.getBytes());
+    }
+
+    /**
+     * Checks if a session entry exists in Redis.
+     * <p>This method is used by {@link #processExpires()} to detect sessions that have expired
+     * in Redis (TTL reached) but still exist in Tomcat's session manager, allowing cleanup to
+     * prevent memory leaks.</p>
+     * <p>If the value for the {@code DOT_DOTCMS_CLUSTER_ID} is specified, it'll be used to prefix
+     * the key.</p>
+     *
+     * @param sessionId The session ID to check.
+     * @return {@code true} if the session exists in Redis, {@code false} otherwise.
+     */
+    protected boolean existsInRedis(final String sessionId) {
+        final String prefixedKey = this.prefix + sessionId;
+        return this.jedisPool.exists(prefixedKey.getBytes());
+    }
+
+    /**
+     * Gets the remaining TTL (time-to-live) in seconds for a session in Redis.
+     *
+     * <p>This method is used to calculate the real last access time for Tomcat-managed sessions
+     * by comparing the original TTL with the remaining TTL. The difference represents the time
+     * elapsed since the last access.</p>
+     *
+     * <p><b>Formula</b>: lastAccessedTime = currentTime - (originalTTL - remainingTTL)</p>
+     *
+     * @param sessionId The session ID to check.
+     * @return The remaining TTL in seconds, or -1 if the key doesn't exist or has no TTL, or -2 if the key doesn't exist at all.
+     */
+    protected long getRemainingTTL(final String sessionId) {
+        final String prefixedKey = this.prefix + sessionId;
+        return this.jedisPool.ttl(prefixedKey.getBytes());
     }
 
     /**
