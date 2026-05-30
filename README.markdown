@@ -185,6 +185,36 @@ dotcms-node:
 Notice that there's a property called `TOMCAT_REDIS_SESSION_ENABLED` in the example configuration. If you remove it or set its value to `'false'` and restart your dotCMS container, the plugin will NOT be activated during startup and the application will let Tomcat handle all Sessions in memory as usual.
 
 
+High Availability with Redis Sentinel
+-------------------------------------
+For production deployments that need automatic failover, the plugin can connect through [Redis Sentinel](https://redis.io/docs/management/sentinel/) instead of a single Redis host. When Sentinel mode is enabled, the plugin discovers the current master from the configured sentinel nodes and transparently fails over to the new master if the original one goes down — no restart or configuration change required.
+
+Sentinel mode activates **only when both** of the following are set:
+
+* `TOMCAT_REDIS_SESSION_SENTINEL_MASTER`: the name of the monitored master (as configured in your `sentinel.conf`, e.g. `mymaster`).
+* `TOMCAT_REDIS_SESSION_SENTINELS`: a comma-separated list of sentinel nodes in `host:port` format.
+
+If either is missing (or the sentinel list is blank), the plugin falls back to a direct connection using `TOMCAT_REDIS_SESSION_HOST` / `TOMCAT_REDIS_SESSION_PORT`.
+
+The master connection inherits the standard credentials and connection settings — `TOMCAT_REDIS_SESSION_USERNAME`, `TOMCAT_REDIS_SESSION_PASSWORD`, `TOMCAT_REDIS_SESSION_DATABASE`, `TOMCAT_REDIS_SESSION_SSL_ENABLED`, and `TOMCAT_REDIS_SESSION_TIMEOUT`. The sentinel nodes themselves are queried using only the timeout and SSL settings, since Sentinels typically have their own (or no) authentication and do not expose application databases.
+
+Example `docker-compose.yml` environment block:
+```yml
+dotcms-node:
+    image: dotcms/dotcms:trunk
+    environment:
+        TOMCAT_REDIS_SESSION_ENABLED: 'true'
+        TOMCAT_REDIS_SESSION_SENTINEL_MASTER: 'mymaster'
+        TOMCAT_REDIS_SESSION_SENTINELS: 'sentinel-1:26379,sentinel-2:26379,sentinel-3:26379'
+        TOMCAT_REDIS_SESSION_PASSWORD: 'MY_SECRET_P4SS'
+        TOMCAT_REDIS_SESSION_SSL_ENABLED: 'false'
+        ...
+```
+When Sentinel mode is active, the startup log reports the master name and the resolved sentinel nodes under the `-> Connecting through Redis Sentinel` message.
+
+> Sentinel support requires this plugin at version **2.0** or later.
+
+
 Local Environment Setup (from source code)
 -----------------------
 In your local environment, you need to go to the Tomcat `context.xml` file, scroll down to the bottom, and add the following code:
