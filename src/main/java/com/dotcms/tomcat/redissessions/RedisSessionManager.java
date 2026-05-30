@@ -1165,7 +1165,8 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
      */
     private boolean isSentinelConfigured() {
         return null != this.sentinelMaster && !this.sentinelMaster.isEmpty()
-                && null != this.sentinelSet && !this.sentinelSet.isEmpty();
+                && null != this.sentinelSet
+                && this.sentinelSet.stream().anyMatch(s -> null != s && !s.trim().isEmpty());
     }
 
     /**
