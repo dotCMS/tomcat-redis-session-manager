@@ -111,6 +111,28 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
     protected ThreadLocal<String> currentSessionId = new ThreadLocal<>();
     protected ThreadLocal<Boolean> currentSessionIsPersisted = new ThreadLocal<>();
 
+    /**
+     * Number of stripes in {@link #saveLocks}. A power of two keeps {@code id.hashCode()} well distributed
+     * across stripes via {@link Math#floorMod(int, int)}, so distinct sessions almost always take different
+     * monitors and only same-ID saves contend.
+     */
+    private static final int SAVE_LOCK_STRIPES = 256;
+    /**
+     * Striped locks used to serialize {@link #saveInternal(Session, boolean)} <b>by session ID</b>. Locking on
+     * the {@link Session} object itself is insufficient because {@link #findSession(String)} deserializes a new
+     * {@link RedisSession} instance on every Redis hit, so concurrent requests for the same ID hold different
+     * objects. Striping (instead of a per-ID lock map) keeps memory bounded and needs no eviction.
+     */
+    private final Object[] saveLocks = createSaveLocks();
+
+    private static Object[] createSaveLocks() {
+        final Object[] locks = new Object[SAVE_LOCK_STRIPES];
+        for (int i = 0; i < locks.length; i++) {
+            locks[i] = new Object();
+        }
+        return locks;
+    }
+
     protected Serializer serializer;
     protected String serializationStrategyClass = JavaSerializer.class.getName();
     protected EnumSet<SessionPersistPolicy> sessionPersistPoliciesSet = EnumSet.of(SessionPersistPolicy.DEFAULT);
@@ -739,12 +761,16 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
      * @throws IOException An error occurred during the process of persisting the Session object.
      */
     protected void saveInternal(final Session session, final boolean forceSave) throws IOException {
-        // Lock per-session instead of on the whole manager so requests for different sessions can save in
-        // parallel. Concurrent saves of the SAME session stay serialized to protect its dirty-tracking state
-        // (the non-thread-safe changedAttributes map and dirty flag). The serializer and the Jedis pool are
-        // already thread-safe, so the previous method-level lock only served to guard same-session races --
-        // at the cost of serializing every request on the node through a single monitor.
-        synchronized (session) {
+        // Lock by session ID instead of on the whole manager so requests for different sessions can save in
+        // parallel, while concurrent saves of the SAME session stay serialized to protect its read-modify-write
+        // (the non-thread-safe changedAttributes map and dirty flag, plus the Redis write). We must key on the
+        // ID rather than the Session object: findSession() deserializes a fresh RedisSession on every Redis hit,
+        // so two requests for the same ID hold different objects and locking on the object would not serialize
+        // them. The serializer and the Jedis pool are already thread-safe, so this is the only contention point
+        // the previous method-level lock was actually guarding -- minus its node-wide serialization cost.
+        final String sessionId = session.getId();
+        final int stripe = Math.floorMod(null == sessionId ? 0 : sessionId.hashCode(), SAVE_LOCK_STRIPES);
+        synchronized (this.saveLocks[stripe]) {
             this.doSaveInternal(session, forceSave);
         }
     }
