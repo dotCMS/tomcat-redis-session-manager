@@ -738,7 +738,27 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
      *
      * @throws IOException An error occurred during the process of persisting the Session object.
      */
-    protected synchronized void saveInternal(final Session session, final boolean forceSave) throws IOException {
+    protected void saveInternal(final Session session, final boolean forceSave) throws IOException {
+        // Lock per-session instead of on the whole manager so requests for different sessions can save in
+        // parallel. Concurrent saves of the SAME session stay serialized to protect its dirty-tracking state
+        // (the non-thread-safe changedAttributes map and dirty flag). The serializer and the Jedis pool are
+        // already thread-safe, so the previous method-level lock only served to guard same-session races --
+        // at the cost of serializing every request on the node through a single monitor.
+        synchronized (session) {
+            this.doSaveInternal(session, forceSave);
+        }
+    }
+
+    /**
+     * Performs the actual save of the Session to Redis. Always invoked while holding the per-session monitor
+     * acquired in {@link #saveInternal(Session, boolean)}; do not call directly.
+     *
+     * @param session   The current {@link Session}.
+     * @param forceSave If the specified Session object MUST be saved no matter what, set this to {@code true}.
+     *
+     * @throws IOException An error occurred during the process of persisting the Session object.
+     */
+    private void doSaveInternal(final Session session, final boolean forceSave) throws IOException {
         log.debug(String.format("Saving session object [ %s ] to Redis server", session));
         final RedisSession redisSession = (RedisSession) session;
         final String sessionId = redisSession.getId();
