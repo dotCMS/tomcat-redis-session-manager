@@ -83,6 +83,12 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
     protected int maxIdle = 100;
     protected int minIdle = 32;
     protected String prefix = "";
+    /**
+     * Delimiter appended after the cluster ID prefix so that Redis keys for one cluster cannot collide
+     * with another cluster whose ID shares the same leading characters (e.g. cluster {@code "prod"} vs
+     * {@code "prod2"}). Without it, {@code "prod" + sessionId} could overlap with {@code "prod2" + sessionId}.
+     */
+    protected static final String PREFIX_DELIMITER = ":sessions:";
     protected int database = Protocol.DEFAULT_DATABASE;
     protected String sentinelMaster = null;
     protected Set<String> sentinelSet = null;
@@ -1029,6 +1035,11 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
         this.maxIdle = ConfigUtil.getConfigProperty(ConfigUtil.REDIS_MAX_IDLE_CONNECTIONS_PROPERTY, this.maxIdle);
         this.minIdle = ConfigUtil.getConfigProperty(ConfigUtil.REDIS_MIN_IDLE_CONNECTIONS_PROPERTY, this.minIdle);
         this.prefix = ConfigUtil.getConfigProperty(ConfigUtil.DOTCMS_CLUSTER_ID_PROPERTY, this.prefix);
+        // Append a delimiter after the cluster ID so keys from clusters with shared leading characters
+        // (e.g. "prod" vs "prod2") cannot collide. Guard against double-appending if already present.
+        if (null != this.prefix && !this.prefix.isEmpty() && !this.prefix.endsWith(PREFIX_DELIMITER)) {
+            this.prefix = this.prefix + PREFIX_DELIMITER;
+        }
         this.manualDirtyTrackingSupportEnabled = ConfigUtil.getConfigProperty(ConfigUtil.REDIS_MANUAL_DIRTY_TRACKING_SUPPORT_PROPERTY,
                 RedisSession.manualDirtyTrackingSupportEnabled);
         RedisSession.setManualDirtyTrackingSupportEnabled(this.manualDirtyTrackingSupportEnabled);

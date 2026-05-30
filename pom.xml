@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.dotcms</groupId>
+    <artifactId>tomcat-redis-session-manager</artifactId>
+    <version>1.6</version>
+    <packaging>jar</packaging>
+
+    <name>tomcat-redis-session-manager</name>
+    <description>Tomcat session manager backed by Redis for dotCMS</description>
+
+    <properties>
+        <maven.compiler.release>11</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <tomcat.version>9.0.108</tomcat.version>
+        <jedis.version>4.4.6</jedis.version>
+        <commons-pool2.version>2.11.1</commons-pool2.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.apache.tomcat</groupId>
+            <artifactId>tomcat-catalina</artifactId>
+            <version>${tomcat.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>redis.clients</groupId>
+            <artifactId>jedis</artifactId>
+            <version>${jedis.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-pool2</artifactId>
+            <version>${commons-pool2.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.tomcat</groupId>
+            <artifactId>tomcat-coyote</artifactId>
+            <version>${tomcat.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <showDeprecation>true</showDeprecation>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+                <version>3.3.1</version>
+                <executions>
+                    <execution>
+                        <id>attach-sources</id>
+                        <goals>
+                            <goal>jar-no-fork</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <version>3.10.0</version>
+                <executions>
+                    <execution>
+                        <id>attach-javadocs</id>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <!--
+        JFrog Artifactory publishing target. Mirrors the Gradle `jfrogPublish` task.
+        Provide credentials in ~/.m2/settings.xml under a <server> whose <id> matches
+        the repository id below, e.g.:
+
+        <server>
+          <id>dotcms-artifactory</id>
+          <username>${env.DOTCMS_ARTIFACTORY_USERNAME}</username>
+          <password>${env.DOTCMS_ARTIFACTORY_PASSWORD}</password>
+        </server>
+
+        Then publish with: mvn clean deploy
+    -->
+    <distributionManagement>
+        <repository>
+            <id>dotcms-artifactory</id>
+            <name>dotCMS Artifactory Releases</name>
+            <url>https://repo.dotcms.com/artifactory/libs-release-local</url>
+        </repository>
+    </distributionManagement>
+
+</project>
