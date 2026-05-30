@@ -157,7 +157,9 @@ Will NOT be displayed in the log. Instead, the String `- Set -` will be displaye
 
 The success message at the bottom is the key indicator that the plugin has successfully connected to Redis and is ready to receive data. It also confirms the TTL set for every user session. By default, only sessions created by dotCMS for either the back-end or the front-end will be persisted to Redis. If you want to persist sessions created by anonymous traffic, you can set the `TOMCAT_REDIS_ENABLED_FOR_ANON_TRAFFIC` property to `true`.
 
-Allowing multiple clusters to share the same session Redis store can be a very smart strategy. In order to accomplish this, you can specify the ID of the cluster via the `DOT_DOTCMS_CLUSTER_ID` property which is used to prefix all keys persisted to Redis. 
+Allowing multiple clusters to share the same session Redis store can be a very smart strategy. In order to accomplish this, you can specify the ID of the cluster via the `DOT_DOTCMS_CLUSTER_ID` property which is used to prefix all keys persisted to Redis. A fixed `:sessions:` delimiter is inserted between the cluster ID and the session ID (e.g. `dotcms-redis-cluster:sessions:<sessionId>`) so that clusters whose IDs share leading characters (for example `prod` and `prod2`) can never collide in a shared Redis store.
+
+> **Upgrade note (1.6):** This release introduces the `:sessions:` delimiter in the Redis key format. The key layout therefore changes from `<clusterId><sessionId>` to `<clusterId>:sessions:<sessionId>`. Sessions written by an earlier version are stored under the old key format and will **not** be found after upgrading, so active users will need to log in again once. Because sessions are short-lived (and Redis TTLs expire the old keys automatically), no manual migration or cleanup is required. Deployments that do **not** set `DOT_DOTCMS_CLUSTER_ID` are unaffected.
 
 
 Docker Setup
