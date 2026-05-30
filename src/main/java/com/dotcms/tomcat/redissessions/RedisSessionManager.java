@@ -17,6 +17,7 @@ import redis.clients.jedis.UnifiedJedis;
 
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.EnumSet;
@@ -71,7 +72,7 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
 
     private final Log log = LogFactory.getLog(RedisSessionManager.class);
 
-    protected static final byte[] NULL_SESSION = "null".getBytes();
+    protected static final byte[] NULL_SESSION = "null".getBytes(StandardCharsets.UTF_8);
 
     protected String host = "localhost";
     protected int port = Protocol.DEFAULT_PORT;
@@ -868,7 +869,7 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
         final String prefixedKey = this.prefix + session.getId();
 
         // Always set Redis TTL
-        this.jedisPool.expire(prefixedKey.getBytes(), seconds);
+        this.jedisPool.expire(prefixedKey.getBytes(StandardCharsets.UTF_8), seconds);
 
         // Only set maxInactiveInterval for authenticated sessions (Redis-managed)
         // For undefined sessions (Tomcat-managed), keep Tomcat's original maxInactiveInterval
@@ -1065,7 +1066,7 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
         this.sentinelMaster = ConfigUtil.getConfigProperty(ConfigUtil.REDIS_SENTINEL_MASTER_PROPERTY, this.sentinelMaster);
         if (null != sentinelMaster && !sentinelMaster.isEmpty()) {
             final String sentinels = ConfigUtil.getConfigProperty(ConfigUtil.REDIS_SENTINELS_PROPERTY, null);
-            if (!sentinels.isEmpty()) {
+            if (null != sentinels && !sentinels.isEmpty()) {
                 this.setSentinels(sentinels);
             }
         }
@@ -1197,7 +1198,7 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
      */
     protected void addRedisEntry(final String key, final byte[] value) {
         final String prefixedKey = this.prefix + key;
-        this.jedisPool.set(prefixedKey.getBytes(), value);
+        this.jedisPool.set(prefixedKey.getBytes(StandardCharsets.UTF_8), value);
     }
 
     /**
@@ -1212,7 +1213,7 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
      */
     protected byte[] getRedisEntry(final String key) {
         final String prefixedKey = this.prefix + key;
-        return this.jedisPool.get(prefixedKey.getBytes());
+        return this.jedisPool.get(prefixedKey.getBytes(StandardCharsets.UTF_8));
     }
 
     /**
@@ -1228,7 +1229,7 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
      */
     protected boolean existsInRedis(final String sessionId) {
         final String prefixedKey = this.prefix + sessionId;
-        return this.jedisPool.exists(prefixedKey.getBytes());
+        return this.jedisPool.exists(prefixedKey.getBytes(StandardCharsets.UTF_8));
     }
 
     /**
@@ -1245,7 +1246,7 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
      */
     protected long getRemainingTTL(final String sessionId) {
         final String prefixedKey = this.prefix + sessionId;
-        return this.jedisPool.ttl(prefixedKey.getBytes());
+        return this.jedisPool.ttl(prefixedKey.getBytes(StandardCharsets.UTF_8));
     }
 
     /**
