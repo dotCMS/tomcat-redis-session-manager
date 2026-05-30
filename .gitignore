@@ -1,9 +1,12 @@
-.gradle/*
-build/*
-example-app/build/*
-example-app/.gradle/*
+# Maven
+target/
+
+# IDE
 .DS_Store
 .rspec
 *.iml
 .idea/*
-/.gradle/
+bin/
+.classpath
+.project
+.settings/

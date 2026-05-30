@@ -39,10 +39,11 @@ As of September 2025, this plugin can run on Tomcat 9.0.108. Keep in mind that e
 
 Compiling the Plugin
 --------------------
-This plugin provides a Gradle Wrapper that you can use to generate the expected .JAR file. Just open up a Terminal in the directory where this project is located, and run the following command:
+This plugin is built with Maven. Just open up a Terminal in the directory where this project is located, and run the following command:
 ```bash
-./gradlew clean jar
+mvn clean package
 ```
+The generated `.JAR` file will be located in the `target/` directory.
 
 
 Plugin Components

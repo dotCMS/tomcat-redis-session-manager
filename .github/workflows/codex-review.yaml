@@ -1,0 +1,28 @@
+name: Codex code review
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+concurrency:
+  group: codex-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Codex autonomous review
+        uses: gersmann/codex-review-action@v1
+        with:
+          mode: review
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          # reasoning_effort: high
