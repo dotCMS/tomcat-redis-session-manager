@@ -90,6 +90,8 @@ If changing the configuration parameters directly in the `context.xml` file is n
 * `TOMCAT_REDIS_SESSION_PASSWORD`: When the username is set, this allows you to set the required password for the connection to the Redis Server.
 * `TOMCAT_REDIS_SESSION_DATABASE`: The default Redis database selected by the Jedis Client.
 * `TOMCAT_REDIS_SESSION_TIMEOUT`: The default timeout for the Jedis Client when trying to connect to the Redis Server.
+* `TOMCAT_REDIS_SESSION_SENTINEL_MASTER`: Enables [Redis Sentinel](https://redis.io/docs/management/sentinel/) high-availability mode. Set this to the name of the monitored master and the plugin will discover the current master through the sentinels and fail over automatically. When set, you must also provide `TOMCAT_REDIS_SESSION_SENTINELS`; otherwise the plugin falls back to a direct connection to `TOMCAT_REDIS_SESSION_HOST`/`PORT`. The configured username, password, database, SSL, and timeout are applied to the master connection.
+* `TOMCAT_REDIS_SESSION_SENTINELS`: A comma-separated list of sentinel nodes (`host:port,host:port,...`) used together with `TOMCAT_REDIS_SESSION_SENTINEL_MASTER`.
 * `TOMCAT_REDIS_USER_SESSION_TIMEOUT`: The default timeout, in seconds, for the user session in the browser. By default, it's set to Tomcat's Timeout, which is usually 1800 seconds -- 30 minutes.
 * `TOMCAT_REDIS_SESSION_PERSISTENT_POLICIES`: The available persistence policies for determining when the user session must be persisted to Redis:
   * `DEFAULT`: Selected by default. It tells the manager to persist the session **ONLY** if its current attributes differ compared to the ones from the session in Redis. This is the default behavior with the least overhead.

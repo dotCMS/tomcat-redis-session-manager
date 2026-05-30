@@ -11,7 +11,10 @@ import org.apache.catalina.session.ManagerBase;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import redis.clients.jedis.ConnectionPoolConfig;
+import redis.clients.jedis.DefaultJedisClientConfig;
+import redis.clients.jedis.HostAndPort;
 import redis.clients.jedis.JedisPooled;
+import redis.clients.jedis.JedisSentineled;
 import redis.clients.jedis.Protocol;
 import redis.clients.jedis.UnifiedJedis;
 
@@ -1140,9 +1143,9 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
     private void initializeRedisConnection() throws LifecycleException {
         log.info("-> Initializing Redis connection...");
         try {
-            jedisPool = null == this.username || this.username.isEmpty()
-                    ? new JedisPooled(this.connectionPoolConfig, getHost(), getPort(), getTimeout(), getPassword(), getSsl())
-                    : new JedisPooled(this.connectionPoolConfig, getHost(), getPort(), getTimeout(), getUsername(), getPassword(), getSsl());
+            jedisPool = this.isSentinelConfigured()
+                    ? this.buildSentinelConnection()
+                    : this.buildStandaloneConnection();
             // Immediately check that the connection via Jedis can indeed be established
             jedisPool.ping();
             log.info("\n\n" +
@@ -1151,6 +1154,65 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
             throw new LifecycleException("FATAL - Failed to connect to Redis. Please check that the server is available, and " +
                     "parameters such as the host, port, and username/password are correct.", e);
         }
+    }
+
+    /**
+     * Determines whether this Manager should connect through Redis Sentinel for high availability. Sentinel mode
+     * requires both a master name ({@code TOMCAT_REDIS_SESSION_SENTINEL_MASTER}) and at least one sentinel node
+     * ({@code TOMCAT_REDIS_SESSION_SENTINELS}); otherwise a direct (standalone) connection is used.
+     *
+     * @return {@code true} if Sentinel configuration is present and usable.
+     */
+    private boolean isSentinelConfigured() {
+        return null != this.sentinelMaster && !this.sentinelMaster.isEmpty()
+                && null != this.sentinelSet
+                && this.sentinelSet.stream().anyMatch(s -> null != s && !s.trim().isEmpty());
+    }
+
+    /**
+     * Builds a direct (standalone) pooled connection to a single Redis host/port.
+     *
+     * @return A {@link JedisPooled} client.
+     */
+    private UnifiedJedis buildStandaloneConnection() {
+        return null == this.username || this.username.isEmpty()
+                ? new JedisPooled(this.connectionPoolConfig, getHost(), getPort(), getTimeout(), getPassword(), getSsl())
+                : new JedisPooled(this.connectionPoolConfig, getHost(), getPort(), getTimeout(), getUsername(), getPassword(), getSsl());
+    }
+
+    /**
+     * Builds a Sentinel-backed connection that discovers the current master from the configured sentinel nodes and
+     * fails over automatically when the master changes. The master connection inherits the configured username,
+     * password, database, SSL, and timeout. The sentinel nodes themselves are queried with only timeout/SSL, since
+     * Sentinels typically have their own (or no) authentication and do not expose application databases.
+     *
+     * @return A {@link JedisSentineled} client.
+     */
+    private UnifiedJedis buildSentinelConnection() {
+        final Set<HostAndPort> sentinels = new HashSet<>();
+        for (final String sentinel : this.sentinelSet) {
+            if (null != sentinel && !sentinel.trim().isEmpty()) {
+                sentinels.add(HostAndPort.from(sentinel.trim()));
+            }
+        }
+        final DefaultJedisClientConfig.Builder masterConfig = DefaultJedisClientConfig.builder()
+                .timeoutMillis(getTimeout())
+                .database(getDatabase())
+                .ssl(getSsl());
+        if (null != this.username && !this.username.isEmpty()) {
+            masterConfig.user(this.username);
+        }
+        if (null != this.password && !this.password.isEmpty()) {
+            masterConfig.password(this.password);
+        }
+        final DefaultJedisClientConfig sentinelConfig = DefaultJedisClientConfig.builder()
+                .timeoutMillis(getTimeout())
+                .ssl(getSsl())
+                .build();
+        log.info(String.format("-> Connecting through Redis Sentinel. Master: '%s', Sentinels: %s",
+                this.sentinelMaster, sentinels));
+        return new JedisSentineled(this.sentinelMaster, masterConfig.build(), this.connectionPoolConfig,
+                sentinels, sentinelConfig);
     }
 
     /**
